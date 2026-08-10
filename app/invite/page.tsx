@@ -13,6 +13,7 @@ export default function InvitePage() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [debug, setDebug] = useState<string | null>(null);
 
   useEffect(() => {
     // @supabase/ssr's browser client doesn't auto-detect tokens in the URL hash the way
@@ -20,15 +21,24 @@ export default function InvitePage() {
     const params = new URLSearchParams(window.location.hash.slice(1));
     const accessToken = params.get("access_token");
     const refreshToken = params.get("refresh_token");
+    const hashErrorDescription = params.get("error_description");
 
-    if (params.get("error")) {
+    console.log("[invite] hash params:", Object.fromEntries(params.entries()));
+
+    if (hashErrorDescription) {
+      setDebug(hashErrorDescription);
       setReady(true);
       return;
     }
 
     if (accessToken && refreshToken) {
-      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data }) => {
-        window.history.replaceState(null, "", window.location.pathname);
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data, error: sessionError }) => {
+        console.log("[invite] setSession result:", { data, sessionError });
+        if (sessionError) {
+          setDebug(sessionError.message);
+        } else {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
         setEmail(data.session?.user.email ?? null);
         setReady(true);
       });
@@ -36,6 +46,7 @@ export default function InvitePage() {
     }
 
     supabase.auth.getSession().then(({ data }) => {
+      console.log("[invite] fallback getSession result:", data);
       setEmail(data.session?.user.email ?? null);
       setReady(true);
     });
@@ -72,6 +83,7 @@ export default function InvitePage() {
         <div className="max-w-md rounded-2xl border border-border-c bg-white p-10 text-center">
           <p className="text-sm font-semibold text-ink">This invite link is invalid or has expired.</p>
           <p className="mt-2 text-sm text-charcoal">Ask an admin to send you a new invite.</p>
+          {debug && <p className="mt-4 break-all text-xs text-red-500">{debug}</p>}
         </div>
       </div>
     );
