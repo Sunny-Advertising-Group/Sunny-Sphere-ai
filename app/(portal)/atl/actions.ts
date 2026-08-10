@@ -7,11 +7,13 @@ export async function addClient(_prevState: unknown, formData: FormData) {
   const supabase = await createClient();
   const name = String(formData.get("name") ?? "").trim();
   const colour = String(formData.get("colour") ?? "").trim();
+  const team = String(formData.get("team") ?? "ATL").trim();
   if (!name) return { error: "Client name is required." };
 
   const { error } = await supabase.from("clients").insert({
     name,
     colour: colour || null,
+    team,
   });
   if (error) return { error: error.message };
 
@@ -24,12 +26,13 @@ export async function updateClient(_prevState: unknown, formData: FormData) {
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   const colour = String(formData.get("colour") ?? "").trim();
+  const team = String(formData.get("team") ?? "ATL").trim();
   const isActive = formData.get("is_active") === "true";
   if (!id || !name) return { error: "Client name is required." };
 
   const { error } = await supabase
     .from("clients")
-    .update({ name, colour: colour || null, is_active: isActive })
+    .update({ name, colour: colour || null, team, is_active: isActive })
     .eq("id", id);
   if (error) return { error: error.message };
 

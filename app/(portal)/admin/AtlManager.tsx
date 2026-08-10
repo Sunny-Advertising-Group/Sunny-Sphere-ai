@@ -20,10 +20,13 @@ const KINDS = [
   { value: "reporting", label: "Reporting" },
 ];
 
+const TEAMS = ["ATL", "Digital", "Comms"];
+
 export type ClientRow = {
   id: number;
   name: string;
   colour: string | null;
+  team: string;
   is_active: boolean;
 };
 
@@ -82,6 +85,9 @@ export function AtlManager({ clients, links }: { clients: ClientRow[]; links: Li
                 <div className="flex items-center gap-2">
                   <span className="h-3 w-3 flex-none rounded-full" style={{ background: client.colour || "#FDB600" }} />
                   <span className="font-semibold text-ink">{client.name}</span>
+                  <span className="rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-charcoal">
+                    {client.team}
+                  </span>
                   {!client.is_active && <span className="text-xs text-charcoal">(inactive)</span>}
                 </div>
                 <div className="flex flex-none gap-2">
@@ -138,15 +144,23 @@ function AddClientForm({ onAdded }: { onAdded: (c: ClientRow) => void }) {
       action={async (fd) => {
         const name = String(fd.get("name") ?? "");
         const colour = String(fd.get("colour") ?? "");
+        const team = String(fd.get("team") ?? "ATL");
         const result = await formAction(fd);
         if ((result as { success?: boolean } | undefined)?.success) {
-          onAdded({ id: Date.now(), name, colour: colour || null, is_active: true });
+          onAdded({ id: Date.now(), name, colour: colour || null, team, is_active: true });
           formRef.current?.reset();
         }
       }}
       className="flex flex-wrap items-end gap-2 rounded-xl border border-border-c bg-white p-4"
     >
       <Input name="name" placeholder="Client name" required className="w-48" />
+      <Select name="team" defaultValue="ATL" className="w-32">
+        {TEAMS.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </Select>
       <Input name="colour" placeholder="#RRGGBB (optional)" className="w-40" />
       <Button type="submit" disabled={pending}>
         {pending ? "Adding…" : "Add"}
@@ -190,6 +204,18 @@ function EditClientForm({
           className="w-48"
           onChange={(e) => setValues((v) => ({ ...v, name: e.target.value }))}
         />
+        <Select
+          name="team"
+          defaultValue={values.team}
+          className="w-32"
+          onChange={(e) => setValues((v) => ({ ...v, team: e.target.value }))}
+        >
+          {TEAMS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </Select>
         <Input
           name="colour"
           defaultValue={values.colour ?? ""}
