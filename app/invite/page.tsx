@@ -15,8 +15,26 @@ export default function InvitePage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    // The invite link's access token lives in the URL fragment; the browser client
-    // detects and exchanges it for a session automatically on init — we just wait for it.
+    // @supabase/ssr's browser client doesn't auto-detect tokens in the URL hash the way
+    // plain supabase-js does (it's built around cookie-synced sessions) — parse it ourselves.
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+
+    if (params.get("error")) {
+      setReady(true);
+      return;
+    }
+
+    if (accessToken && refreshToken) {
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data }) => {
+        window.history.replaceState(null, "", window.location.pathname);
+        setEmail(data.session?.user.email ?? null);
+        setReady(true);
+      });
+      return;
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       setEmail(data.session?.user.email ?? null);
       setReady(true);
