@@ -3,18 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { NavItem } from "@/lib/nav";
+import { NAV_ITEMS } from "@/lib/nav";
 
 export function Sidebar({
-  items,
+  visibleHrefs,
   fullName,
   email,
 }: {
-  items: NavItem[];
+  visibleHrefs: string[];
   fullName: string | null;
   email: string;
 }) {
   const pathname = usePathname();
+  const items = NAV_ITEMS.filter((item) => visibleHrefs.includes(item.href));
 
   return (
     <aside className="flex h-screen w-64 flex-none flex-col border-r border-border-c bg-white">

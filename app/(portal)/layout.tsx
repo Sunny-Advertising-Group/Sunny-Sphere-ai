@@ -9,15 +9,15 @@ export default async function PortalLayout({ children }: { children: React.React
 
   const { profile, isAdmin, canSee } = visibility;
 
-  const items = NAV_ITEMS.filter((item) => {
+  const visibleHrefs = NAV_ITEMS.filter((item) => {
     if (item.adminOnly) return isAdmin;
     if (item.section) return canSee(item.section);
     return true;
-  });
+  }).map((item) => item.href);
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar items={items} fullName={profile.full_name} email={profile.email} />
+      <Sidebar visibleHrefs={visibleHrefs} fullName={profile.full_name} email={profile.email} />
       <main className="min-h-screen flex-1">{children}</main>
     </div>
   );
