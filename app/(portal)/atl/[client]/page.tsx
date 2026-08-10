@@ -46,6 +46,8 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
       <PageHeader
         title={client.name}
         description={!client.is_active ? "Inactive client" : "Drive links only — the master files live in Drive, not here."}
+        backHref="/atl"
+        backLabel="Back to ATL"
       />
 
       <div className="space-y-8 p-8">

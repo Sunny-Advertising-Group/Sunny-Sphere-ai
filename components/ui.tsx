@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Inbox, type LucideIcon } from "lucide-react";
+import { ChevronLeft, Inbox, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function Card({
@@ -22,14 +22,27 @@ export function PageHeader({
   title,
   description,
   action,
+  backHref,
+  backLabel = "Back",
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
+  backHref?: string;
+  backLabel?: string;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border-c bg-white px-8 py-8">
       <div>
+        {backHref && (
+          <Link
+            href={backHref}
+            className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-charcoal hover:text-gold"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+            {backLabel}
+          </Link>
+        )}
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">{title}</h1>
         {description && <p className="mt-1 text-sm text-charcoal">{description}</p>}
       </div>
