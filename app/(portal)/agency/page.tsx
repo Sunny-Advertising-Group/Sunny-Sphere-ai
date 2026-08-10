@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
-import { AddResourceForm } from "@/components/AddResourceForm";
 
 export default async function AgencyPage() {
   const visibility = await getVisibility();
@@ -25,7 +24,6 @@ export default async function AgencyPage() {
       <PageHeader title="Agency" description="Policies, guides and answers to the questions that come up most." />
       <div className="space-y-10 p-8">
         <div>
-          {visibility.isAdmin && <AddResourceForm section="policy" label="+ Add policy / resource" />}
           {Object.keys(groups).length === 0 ? (
             <EmptyState icon="🏢" title="Nothing added yet" />
           ) : (
@@ -57,10 +55,7 @@ export default async function AgencyPage() {
         </div>
 
         <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-ink">FAQs</h2>
-            {visibility.isAdmin && <AddResourceForm section="faq" label="+ Add FAQ" showBody />}
-          </div>
+          <h2 className="mb-3 text-sm font-bold text-ink">FAQs</h2>
           {!faqs || faqs.length === 0 ? (
             <EmptyState icon="❓" title="No FAQs yet" />
           ) : (

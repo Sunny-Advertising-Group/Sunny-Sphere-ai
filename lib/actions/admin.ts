@@ -63,6 +63,42 @@ export async function reviewTool(toolId: number, status: "published" | "rejected
   return { success: true };
 }
 
+export async function reviewTip(tipId: number, status: "published" | "rejected") {
+  const { supabase, isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+
+  const { error } = await supabase.from("tips").update({ status }).eq("id", tipId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  revalidatePath("/tips");
+  return { success: true };
+}
+
+export async function deleteTool(toolId: number) {
+  const { supabase, isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+
+  const { error } = await supabase.from("tools").delete().eq("id", toolId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  revalidatePath("/tools");
+  return { success: true };
+}
+
+export async function deleteTip(tipId: number) {
+  const { supabase, isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+
+  const { error } = await supabase.from("tips").delete().eq("id", tipId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  revalidatePath("/tips");
+  return { success: true };
+}
+
 export async function setAiRequestStatus(requestId: number, status: string) {
   const { supabase, isAdmin } = await requireAdmin();
   if (!isAdmin) return { error: "Not authorized." };

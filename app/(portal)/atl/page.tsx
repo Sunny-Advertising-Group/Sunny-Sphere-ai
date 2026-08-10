@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
-import { AddClientForm } from "./AddClientForm";
 
 export default async function AtlPage() {
   const visibility = await getVisibility();
@@ -20,7 +19,6 @@ export default async function AtlPage() {
       <PageHeader
         title="ATL"
         description="Flight plans, WIPs, rate cards, budgets, assets and reporting — one client at a time."
-        action={visibility.isAdmin ? <AddClientForm /> : undefined}
       />
 
       <div className="p-8">

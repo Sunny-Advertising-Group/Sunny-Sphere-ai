@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
-import { AddResourceForm } from "@/components/AddResourceForm";
 
 export default async function LearningPage() {
   const visibility = await getVisibility();
@@ -22,10 +21,7 @@ export default async function LearningPage() {
       <PageHeader title="Learning" description="Learning paths and the Loom training library." />
       <div className="space-y-10 p-8">
         <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-ink">Learning paths</h2>
-            {visibility.isAdmin && <AddResourceForm section="learning_path" label="+ Add path" showDuration />}
-          </div>
+          <h2 className="mb-3 text-sm font-bold text-ink">Learning paths</h2>
           {!paths || paths.length === 0 ? (
             <EmptyState icon="🎓" title="No learning paths yet" />
           ) : (
@@ -63,10 +59,7 @@ export default async function LearningPage() {
         </div>
 
         <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-ink">Training videos</h2>
-            {visibility.isAdmin && <AddResourceForm section="loom" label="+ Add video" showDuration />}
-          </div>
+          <h2 className="mb-3 text-sm font-bold text-ink">Training videos</h2>
           {!looms || looms.length === 0 ? (
             <EmptyState icon="📹" title="No training videos yet" />
           ) : (

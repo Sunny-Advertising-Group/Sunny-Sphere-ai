@@ -26,8 +26,10 @@ export default function InvitePage() {
     console.log("[invite] hash params:", Object.fromEntries(params.entries()));
 
     if (hashErrorDescription) {
-      setDebug(hashErrorDescription);
-      setReady(true);
+      Promise.resolve().then(() => {
+        setDebug(hashErrorDescription);
+        setReady(true);
+      });
       return;
     }
 

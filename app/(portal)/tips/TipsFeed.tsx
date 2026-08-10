@@ -10,6 +10,7 @@ export type Tip = {
   body: string;
   title: string | null;
   created_at: string;
+  status?: string;
 };
 
 export function TipsFeed({
@@ -64,6 +65,7 @@ export function TipsFeed({
             <p className="mt-0.5 whitespace-pre-wrap text-sm text-charcoal">{tip.body}</p>
             <div className="mt-2 flex items-center gap-2">
               {tip.category && <Pill>{tip.category}</Pill>}
+              {tip.status && tip.status !== "published" && <Pill tone="muted">{tip.status}</Pill>}
               <span className="text-xs text-charcoal">{new Date(tip.created_at).toLocaleDateString()}</span>
             </div>
           </div>

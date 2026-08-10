@@ -24,6 +24,7 @@ export function TipForm({ isPrompt }: { isPrompt: boolean }) {
       </div>
       <Textarea name="body" required placeholder={isPrompt ? "Paste the prompt…" : "Share a tip or trick…"} />
       {state?.error && <p className="text-xs font-medium text-red-600">{state.error}</p>}
+      {state?.success && <p className="text-xs font-medium text-green-700">Sent for admin review — it&apos;ll appear here once approved.</p>}
       <Button type="submit" disabled={pending}>
         {pending ? "Sharing…" : isPrompt ? "Add to prompt library" : "Share tip"}
       </Button>

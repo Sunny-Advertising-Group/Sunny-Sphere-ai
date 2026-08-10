@@ -11,8 +11,8 @@ export default async function TipsPage() {
 
   const supabase = await createClient();
   const [{ data: tips }, { data: prompts }, { data: likes }] = await Promise.all([
-    supabase.from("tips").select("id, category, body, title, created_at").eq("is_prompt", false).order("created_at", { ascending: false }),
-    supabase.from("tips").select("id, category, body, title, created_at").eq("is_prompt", true).order("created_at", { ascending: false }),
+    supabase.from("tips").select("id, category, body, title, created_at, status").eq("is_prompt", false).order("created_at", { ascending: false }),
+    supabase.from("tips").select("id, category, body, title, created_at, status").eq("is_prompt", true).order("created_at", { ascending: false }),
     supabase.from("tip_likes").select("tip_id, user_id"),
   ]);
 

@@ -2,7 +2,6 @@ import { notFound, redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
-import { AddLinkForm } from "./AddLinkForm";
 
 const KIND_LABELS: Record<string, string> = {
   flight_plan: "Flight plan",
@@ -54,7 +53,6 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
       <PageHeader
         title={client.name}
         description={!client.is_active ? "Inactive client" : "Drive links only — the master files live in Drive, not here."}
-        action={visibility.isAdmin ? <AddLinkForm clientId={client.id} /> : undefined}
       />
 
       <div className="space-y-8 p-8">
