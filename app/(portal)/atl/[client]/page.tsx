@@ -1,17 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { kindLabel } from "@/lib/atl";
 import { Link2, Radio } from "lucide-react";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
-
-const KIND_LABELS: Record<string, string> = {
-  flight_plan: "Flight plan",
-  wip: "WIP",
-  rate_card: "Rate card",
-  budget: "Budget",
-  assets: "Assets",
-  reporting: "Reporting",
-};
 
 export default async function AtlClientPage({ params }: { params: Promise<{ client: string }> }) {
   const { client: rawClient } = await params;
@@ -66,7 +58,7 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
               {Object.entries(grouped).map(([kind, kindLinks]) => (
                 <Card key={kind}>
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gold">
-                    {KIND_LABELS[kind] ?? kind}
+                    {kindLabel(kind)}
                   </div>
                   <ul className="space-y-2">
                     {kindLinks!.map((link) => (
