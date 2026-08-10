@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Inbox, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function Card({
@@ -133,10 +134,18 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   );
 }
 
-export function EmptyState({ icon = "—", title, description }: { icon?: string; title: string; description?: string }) {
+export function EmptyState({
+  icon: Icon = Inbox,
+  title,
+  description,
+}: {
+  icon?: LucideIcon;
+  title: string;
+  description?: string;
+}) {
   return (
     <div className="rounded-2xl border border-dashed border-border-c bg-white py-16 text-center">
-      <div className="mb-3 text-3xl">{icon}</div>
+      <Icon className="mx-auto mb-3 h-8 w-8 text-charcoal/40" strokeWidth={1.5} aria-hidden />
       <p className="text-sm font-semibold text-ink">{title}</p>
       {description && <p className="mt-1 text-sm text-charcoal">{description}</p>}
     </div>

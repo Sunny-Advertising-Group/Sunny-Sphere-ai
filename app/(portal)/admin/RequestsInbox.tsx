@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { setAiRequestStatus } from "@/lib/actions/admin";
+import { Lightbulb } from "lucide-react";
 import { Card, EmptyState, Select } from "@/components/ui";
 
 const STATUSES = ["new", "in_review", "building", "shipped", "parked"];
@@ -25,7 +26,7 @@ export function RequestsInbox({ requests }: { requests: AiRequest[] }) {
     });
   }
 
-  if (items.length === 0) return <EmptyState icon="💡" title="Inbox is empty" />;
+  if (items.length === 0) return <EmptyState icon={Lightbulb} title="Inbox is empty" />;
 
   return (
     <div className="space-y-3">

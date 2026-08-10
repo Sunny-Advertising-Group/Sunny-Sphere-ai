@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { Lightbulb } from "lucide-react";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
 import { AiRequestForm } from "./AiRequestForm";
 
@@ -31,7 +32,7 @@ export default async function CouldThisBeAidPage() {
         <div>
           <h2 className="mb-3 text-sm font-bold text-ink">Your submissions</h2>
           {!mine || mine.length === 0 ? (
-            <EmptyState icon="💡" title="Nothing submitted yet" />
+            <EmptyState icon={Lightbulb} title="Nothing submitted yet" />
           ) : (
             <div className="space-y-3">
               {mine.map((r) => (

@@ -18,7 +18,7 @@ export default async function ToolsPage() {
     <div>
       <PageHeader
         title="Tools"
-        description="Find the right AI tool ☀️ — all your favourite tools and templates in one place."
+        description="Find the right AI tool — all your favourite tools and templates in one place."
         action={<LinkButton href="/tools/upload">+ Submit a tool</LinkButton>}
       />
       <ToolsBrowser tools={tools ?? []} />

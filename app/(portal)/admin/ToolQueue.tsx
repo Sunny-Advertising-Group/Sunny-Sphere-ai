@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { reviewTool } from "@/lib/actions/admin";
+import { Wrench } from "lucide-react";
 import { Card, EmptyState, Pill } from "@/components/ui";
 
 export type PendingTool = {
@@ -24,7 +25,7 @@ export function ToolQueue({ tools }: { tools: PendingTool[] }) {
     });
   }
 
-  if (items.length === 0) return <EmptyState icon="🛠" title="Nothing pending review" />;
+  if (items.length === 0) return <EmptyState icon={Wrench} title="Nothing pending review" />;
 
   return (
     <div className="space-y-3">

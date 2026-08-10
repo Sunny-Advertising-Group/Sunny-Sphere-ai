@@ -41,7 +41,7 @@ export function AiRequestForm() {
       </div>
 
       {state?.error && <p className="text-sm font-medium text-red-600">{state.error}</p>}
-      {state?.success && <p className="text-sm font-medium text-green-700">Sent to the AI Champs 🎉</p>}
+      {state?.success && <p className="text-sm font-medium text-green-700">Sent to the AI Champs!</p>}
 
       <Button type="submit" disabled={pending}>
         {pending ? "Submitting…" : "Submit to the AI Champs →"}

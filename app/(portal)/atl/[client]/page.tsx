@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { Link2, Radio } from "lucide-react";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
 
 const KIND_LABELS: Record<string, string> = {
@@ -59,7 +60,7 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
         <div>
           <h2 className="mb-3 text-sm font-bold text-ink">Links</h2>
           {Object.keys(grouped).length === 0 ? (
-            <EmptyState icon="🔗" title="No links yet" description="Admins can add flight plans, WIPs, rate cards and more above." />
+            <EmptyState icon={Link2} title="No links yet" description="Admins can add flight plans, WIPs, rate cards and more above." />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Object.entries(grouped).map(([kind, kindLinks]) => (
@@ -101,7 +102,7 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
           </div>
           {!liveMaterial || liveMaterial.length === 0 ? (
             <EmptyState
-              icon="📡"
+              icon={Radio}
               title="No live material data"
               description="The hourly sync from the LIVE MATERIAL sheet hasn't been switched on yet — this is a mirror, never the source of truth."
             />

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Sun } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
@@ -65,8 +66,9 @@ export default async function DashboardPage() {
   return (
     <div>
       <div className="border-b border-border-c bg-white px-8 py-10">
-        <h1 className="text-3xl font-extrabold tracking-tight text-ink">
-          Welcome back, {profile.full_name?.split(" ")[0] || profile.email.split("@")[0]} ☀️
+        <h1 className="flex items-center gap-2 text-3xl font-extrabold tracking-tight text-ink">
+          Welcome back, {profile.full_name?.split(" ")[0] || profile.email.split("@")[0]}
+          <Sun className="h-7 w-7 text-gold" strokeWidth={2} aria-hidden />
         </h1>
         <p className="mt-1 text-sm text-charcoal">Here&rsquo;s what&rsquo;s happening in Sunny Sphere.</p>
       </div>

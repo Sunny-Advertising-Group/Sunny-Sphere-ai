@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { reviewTip } from "@/lib/actions/admin";
+import { Sparkles } from "lucide-react";
 import { Card, EmptyState, Pill } from "@/components/ui";
 
 export type PendingTip = {
@@ -23,7 +24,7 @@ export function TipQueue({ tips }: { tips: PendingTip[] }) {
     });
   }
 
-  if (items.length === 0) return <EmptyState icon="✨" title="Nothing pending review" />;
+  if (items.length === 0) return <EmptyState icon={Sparkles} title="Nothing pending review" />;
 
   return (
     <div className="space-y-3">

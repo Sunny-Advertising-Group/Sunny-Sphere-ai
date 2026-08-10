@@ -26,6 +26,7 @@ export function Sidebar({
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {items.map((item) => {
           const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          const Icon = item.icon;
           return (
             <Link
               key={item.href}
@@ -34,7 +35,7 @@ export function Sidebar({
                 active ? "bg-gold font-bold text-ink" : "text-charcoal hover:bg-black/5 hover:text-ink"
               }`}
             >
-              <span aria-hidden>{item.icon}</span>
+              <Icon className="h-4 w-4 flex-none" strokeWidth={2} aria-hidden />
               {item.label}
             </Link>
           );

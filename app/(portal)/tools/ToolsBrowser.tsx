@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Wrench, X } from "lucide-react";
 import { Card, EmptyState, Input, Pill } from "@/components/ui";
 
 export type Tool = {
@@ -66,7 +67,7 @@ export function ToolsBrowser({ tools, isOwnerView }: { tools: Tool[]; isOwnerVie
       <div className="p-8">
         {filtered.length === 0 ? (
           <EmptyState
-            icon="🔧"
+            icon={Wrench}
             title={isOwnerView ? "Nothing pending" : "No tools found"}
             description={isOwnerView ? undefined : "Try a different search or category."}
           />
@@ -120,7 +121,7 @@ function ToolModal({ tool, onClose }: { tool: Tool; onClose: () => void }) {
     >
       <div onClick={(e) => e.stopPropagation()} className="relative w-full max-w-lg rounded-2xl bg-white p-8 shadow-xl">
         <button onClick={onClose} className="absolute right-4 top-4 text-charcoal hover:text-ink" aria-label="Close">
-          ✕
+          <X className="h-4 w-4" strokeWidth={2} />
         </button>
         <Pill tone="gold">{tool.category}</Pill>
         <h2 className="mt-3 text-lg font-extrabold text-ink">{tool.name}</h2>

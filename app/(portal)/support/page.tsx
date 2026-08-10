@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { LifeBuoy } from "lucide-react";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
 import { TicketForm } from "./TicketForm";
 
@@ -45,7 +46,7 @@ export default async function SupportPage() {
           <div>
             <h2 className="mb-3 text-sm font-bold text-ink">Your tickets</h2>
             {!mine || mine.length === 0 ? (
-              <EmptyState icon="🆘" title="No tickets yet" />
+              <EmptyState icon={LifeBuoy} title="No tickets yet" />
             ) : (
               <div className="space-y-3">
                 {mine.map((t) => (

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { MessageCircle, Sparkles } from "lucide-react";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { TipForm } from "./TipForm";
 import { TipsFeed } from "./TipsFeed";
@@ -33,7 +34,7 @@ export default async function TipsPage() {
             <TipForm isPrompt={false} />
           </div>
           {!tips || tips.length === 0 ? (
-            <EmptyState icon="💬" title="No tips yet" />
+            <EmptyState icon={MessageCircle} title="No tips yet" />
           ) : (
             <TipsFeed tips={tips} likeCounts={likeCounts} likedByMe={likedByMe} />
           )}
@@ -45,7 +46,7 @@ export default async function TipsPage() {
             <TipForm isPrompt={true} />
           </div>
           {!prompts || prompts.length === 0 ? (
-            <EmptyState icon="✨" title="No prompts yet" />
+            <EmptyState icon={Sparkles} title="No prompts yet" />
           ) : (
             <TipsFeed tips={prompts} likeCounts={likeCounts} likedByMe={likedByMe} />
           )}

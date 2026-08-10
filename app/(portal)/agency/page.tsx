@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { Building2, HelpCircle } from "lucide-react";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
 
 export default async function AgencyPage() {
@@ -25,7 +26,7 @@ export default async function AgencyPage() {
       <div className="space-y-10 p-8">
         <div>
           {Object.keys(groups).length === 0 ? (
-            <EmptyState icon="🏢" title="Nothing added yet" />
+            <EmptyState icon={Building2} title="Nothing added yet" />
           ) : (
             Object.entries(groups).map(([group, items]) => (
               <div key={group} className="mb-8">
@@ -57,7 +58,7 @@ export default async function AgencyPage() {
         <div>
           <h2 className="mb-3 text-sm font-bold text-ink">FAQs</h2>
           {!faqs || faqs.length === 0 ? (
-            <EmptyState icon="❓" title="No FAQs yet" />
+            <EmptyState icon={HelpCircle} title="No FAQs yet" />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {faqs.map((f) => (

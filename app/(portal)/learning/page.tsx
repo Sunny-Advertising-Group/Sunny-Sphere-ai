@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { GraduationCap, Video } from "lucide-react";
 import { Card, EmptyState, PageHeader, Pill } from "@/components/ui";
 
 export default async function LearningPage() {
@@ -23,7 +24,7 @@ export default async function LearningPage() {
         <div>
           <h2 className="mb-3 text-sm font-bold text-ink">Learning paths</h2>
           {!paths || paths.length === 0 ? (
-            <EmptyState icon="🎓" title="No learning paths yet" />
+            <EmptyState icon={GraduationCap} title="No learning paths yet" />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {paths.map((p) => {
@@ -61,7 +62,7 @@ export default async function LearningPage() {
         <div>
           <h2 className="mb-3 text-sm font-bold text-ink">Training videos</h2>
           {!looms || looms.length === 0 ? (
-            <EmptyState icon="📹" title="No training videos yet" />
+            <EmptyState icon={Video} title="No training videos yet" />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {looms.map((l) => (

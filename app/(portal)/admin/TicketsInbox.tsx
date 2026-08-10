@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { setTicketStatus } from "@/lib/actions/admin";
+import { LifeBuoy } from "lucide-react";
 import { Card, EmptyState, Select } from "@/components/ui";
 
 const STATUSES = ["open", "in_progress", "resolved"];
@@ -25,7 +26,7 @@ export function TicketsInbox({ tickets }: { tickets: Ticket[] }) {
     });
   }
 
-  if (items.length === 0) return <EmptyState icon="🆘" title="No tickets" />;
+  if (items.length === 0) return <EmptyState icon={LifeBuoy} title="No tickets" />;
 
   return (
     <div className="space-y-3">

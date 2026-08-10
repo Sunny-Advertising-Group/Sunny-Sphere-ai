@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { BarChart3 } from "lucide-react";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 
 export default async function AtlPage() {
@@ -23,7 +24,7 @@ export default async function AtlPage() {
 
       <div className="p-8">
         {!clients || clients.length === 0 ? (
-          <EmptyState icon="📊" title="No clients yet" description="Add a client to start linking their ATL material." />
+          <EmptyState icon={BarChart3} title="No clients yet" description="Add a client to start linking their ATL material." />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {clients.map((client) => (
