@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { grantSection, revokeSection, updateRole } from "@/lib/actions/admin";
+import { grantSection, revokeSection, updateRole, updateTeam } from "@/lib/actions/admin";
 import { RESTRICTED_SECTIONS } from "@/lib/sections";
 import { Card } from "@/components/ui";
 
@@ -22,6 +22,13 @@ export function PeopleTable({ people }: { people: Person[] }) {
     setRows((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
     startTransition(async () => {
       await updateRole(id, role);
+    });
+  }
+
+  function changeTeam(id: string, team: string) {
+    setRows((prev) => prev.map((p) => (p.id === id ? { ...p, team: team || null } : p)));
+    startTransition(async () => {
+      await updateTeam(id, team);
     });
   }
 
@@ -69,7 +76,17 @@ export function PeopleTable({ people }: { people: Person[] }) {
                 <div className="font-medium text-ink">{p.full_name || p.email}</div>
                 <div className="text-xs text-charcoal">{p.email}</div>
               </td>
-              <td className="px-4 py-3 text-charcoal">{p.team || "—"}</td>
+              <td className="px-4 py-3">
+                <input
+                  type="text"
+                  defaultValue={p.team ?? ""}
+                  placeholder="—"
+                  onBlur={(e) => {
+                    if (e.target.value !== (p.team ?? "")) changeTeam(p.id, e.target.value.trim());
+                  }}
+                  className="w-28 rounded-lg border border-border-c bg-white px-2 py-1 text-xs text-charcoal outline-none focus:border-gold"
+                />
+              </td>
               <td className="px-4 py-3">
                 <select
                   value={p.role}

@@ -134,6 +134,20 @@ export async function updateRole(userId: string, role: "team" | "admin") {
   return { success: true };
 }
 
+export async function updateTeam(userId: string, team: string) {
+  const { supabase, isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ team: team.trim() || null })
+    .eq("id", userId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
 export async function grantSection(userId: string, section: string) {
   const { supabase, user, isAdmin } = await requireAdmin();
   if (!user || !isAdmin) return { error: "Not authorized." };
