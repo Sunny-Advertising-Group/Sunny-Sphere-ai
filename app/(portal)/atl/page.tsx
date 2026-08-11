@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
@@ -34,6 +35,16 @@ export default async function AtlPage() {
       <PageHeader
         title="ATL"
         description="Flight plans, WIPs, rate cards, budgets, assets and reporting — by client or by category."
+        action={
+          visibility.isAdmin ? (
+            <Link
+              href="/admin#atl-manager"
+              className="rounded-full border border-gold bg-gold px-3 py-1.5 text-xs font-semibold text-ink hover:bg-gold/90"
+            >
+              Manage clients & links
+            </Link>
+          ) : undefined
+        }
       />
       <AtlHub clients={clients ?? []} links={links} />
     </div>

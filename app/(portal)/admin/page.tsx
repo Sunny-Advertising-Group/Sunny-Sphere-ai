@@ -164,7 +164,7 @@ export default async function AdminPage() {
           <ResourceList items={loomVideos ?? []} showDuration />
         </section>
 
-        <section>
+        <section id="atl-manager">
           <h2 className="mb-4 text-sm font-bold text-ink">ATL — clients & links</h2>
           <AtlManager clients={clients ?? []} links={atlLinks ?? []} />
         </section>

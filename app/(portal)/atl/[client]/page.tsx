@@ -54,7 +54,7 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
         <div>
           <h2 className="mb-3 text-sm font-bold text-ink">Links</h2>
           {Object.keys(grouped).length === 0 ? (
-            <EmptyState icon={Link2} title="No links yet" description="Admins can add flight plans, WIPs, rate cards and more above." />
+            <EmptyState icon={Link2} title="No links yet" description="Admins can add flight plans, WIPs, rate cards and more from Admin → ATL — clients & links." />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Object.entries(grouped).map(([kind, kindLinks]) => (
