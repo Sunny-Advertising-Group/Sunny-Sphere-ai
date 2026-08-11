@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { kindLabel, KIND_ORDER } from "@/lib/atl";
+import { categoryKind, kindLabel, KIND_ORDER } from "@/lib/atl";
 import { Card, EmptyState } from "@/components/ui";
 import { BarChart3, ChevronDown, ChevronRight } from "lucide-react";
 
@@ -48,14 +48,16 @@ export function AtlHub({ clients, links }: { clients: ClientRow[]; links: LinkRo
   );
 
   const byCategory = useMemo(() => {
-    const kinds = Array.from(new Set(links.map((l) => l.kind)));
+    const kinds = Array.from(new Set(links.map((l) => categoryKind(l.kind))));
     const ordered = [
       ...KIND_ORDER.filter((k) => kinds.includes(k)),
       ...kinds.filter((k) => !KIND_ORDER.includes(k)).sort(),
     ];
     return ordered.map((kind) => ({
       kind,
-      links: links.filter((l) => l.kind === kind).sort((a, b) => a.client_name.localeCompare(b.client_name)),
+      links: links
+        .filter((l) => categoryKind(l.kind) === kind)
+        .sort((a, b) => a.client_name.localeCompare(b.client_name)),
     }));
   }, [links]);
 

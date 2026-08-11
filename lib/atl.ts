@@ -9,6 +9,15 @@ export const KIND_LABELS: Record<string, string> = {
   whatagraph_report: "Whatagraph report and reporting dashboard",
   creative_brief: "Creative brief",
   live_material_tracker: "Live material tracker",
+  // Lincoln Place splits both media plan and live material by state rather
+  // than having one link per kind — these keep the admin dropdown and the
+  // Links tab showing a real label instead of a raw kind string.
+  nsw_media_plan: "NSW media plan",
+  qld_media_plan: "QLD media plan",
+  vic_media_plan: "VIC media plan",
+  nsw_live_material: "NSW live material tracker",
+  qld_live_material: "QLD live material tracker",
+  vic_live_material: "VIC live material tracker",
 };
 
 // Kinds shown first, in this order, before any other kind found in the data (alphabetical).
@@ -23,7 +32,37 @@ export const KIND_ORDER = [
   "whatagraph_report",
   "creative_brief",
   "live_material_tracker",
+  "nsw_media_plan",
+  "qld_media_plan",
+  "vic_media_plan",
+  "nsw_live_material",
+  "qld_live_material",
+  "vic_live_material",
 ];
+
+// Kinds whose live_material rows should be synced (the live-material cron
+// matches on this, not on an exact single kind, since some clients split
+// their tracker by state).
+export const LIVE_MATERIAL_KIND_PATTERN = "live_material";
+
+// Some clients (Lincoln Place) split what's conceptually a single kind of
+// document into one link per state. Individually they keep their own label
+// (e.g. "NSW media plan") so the Links tab and admin dropdown stay specific,
+// but for the /atl "By category" rollup across all clients, a media plan is
+// a flight plan and a state live-material tracker is still just the live
+// material tracker — this folds them into their shared parent category.
+const CATEGORY_ALIASES: Record<string, string> = {
+  nsw_media_plan: "flight_plan",
+  qld_media_plan: "flight_plan",
+  vic_media_plan: "flight_plan",
+  nsw_live_material: "live_material_tracker",
+  qld_live_material: "live_material_tracker",
+  vic_live_material: "live_material_tracker",
+};
+
+export function categoryKind(kind: string): string {
+  return CATEGORY_ALIASES[kind] ?? kind;
+}
 
 // Dropdown options for the admin ATL link form — single source of truth, kept
 // in step with KIND_LABELS/KIND_ORDER above.

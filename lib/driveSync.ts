@@ -36,6 +36,20 @@ export async function fetchDriveMetadata(fileId: string, apiKey: string): Promis
   };
 }
 
+// Accepts either the standard `Authorization: Bearer <secret>` header (what
+// Vercel Cron sends) or a `?secret=` query param, so the same URL can be
+// pasted straight into a browser address bar for a manual one-off run.
+export function isAuthorizedCronRequest(request: Request): boolean {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return true;
+
+  const auth = request.headers.get("authorization");
+  if (auth === `Bearer ${cronSecret}`) return true;
+
+  const url = new URL(request.url);
+  return url.searchParams.get("secret") === cronSecret;
+}
+
 export async function fetchDriveCsvExport(fileId: string, apiKey: string): Promise<string> {
   const url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/csv&key=${apiKey}`;
   const res = await fetch(url);
