@@ -36,6 +36,15 @@ export async function fetchDriveMetadata(fileId: string, apiKey: string): Promis
   };
 }
 
+export async function fetchDriveCsvExport(fileId: string, apiKey: string): Promise<string> {
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/csv&key=${apiKey}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Drive export ${res.status} for file ${fileId}: ${await res.text()}`);
+  }
+  return res.text();
+}
+
 // Runs async tasks with bounded concurrency so a client with many links
 // doesn't fire dozens of simultaneous requests at once.
 export async function mapWithConcurrency<T, R>(
