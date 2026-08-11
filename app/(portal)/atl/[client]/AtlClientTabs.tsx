@@ -24,6 +24,7 @@ export type LiveMaterialRow = {
   status: string | null;
   due_date: string | null;
   synced_at: string | null;
+  source_kind: string | null;
 };
 
 const TABS = [
@@ -51,7 +52,18 @@ export function AtlClientTabs({
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("links");
 
-  const latestSync = liveMaterial.find((m) => m.synced_at)?.synced_at;
+  // Most clients have one tracker sheet; Lincoln Place has three (NSW/QLD/VIC).
+  // Group by source_kind and only show sub-tabs when there's more than one.
+  const liveMaterialGroups = liveMaterial.reduce<Record<string, LiveMaterialRow[]>>((acc, row) => {
+    const key = row.source_kind ?? "live_material_tracker";
+    (acc[key] ??= []).push(row);
+    return acc;
+  }, {});
+  const liveMaterialGroupKeys = Object.keys(liveMaterialGroups);
+  const [activeLiveMaterialGroup, setActiveLiveMaterialGroup] = useState<string | null>(null);
+  const currentGroupKey = activeLiveMaterialGroup ?? liveMaterialGroupKeys[0] ?? null;
+  const currentGroupRows = currentGroupKey ? (liveMaterialGroups[currentGroupKey] ?? []) : [];
+  const latestSync = currentGroupRows.find((m) => m.synced_at)?.synced_at;
 
   const tracked = links.filter((l) => l.cadence && l.cadence !== "none");
   const statuses = tracked.map((l) => housekeepingStatus(l.cadence, l.drive_modified_at));
@@ -183,6 +195,24 @@ export function AtlClientTabs({
 
       {tab === "live_material" && (
         <div>
+          {liveMaterialGroupKeys.length > 1 && (
+            <div className="mb-4 flex gap-2">
+              {liveMaterialGroupKeys.map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveLiveMaterialGroup(key)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    key === currentGroupKey
+                      ? "bg-gold text-ink"
+                      : "border border-border-c text-charcoal hover:border-gold/50"
+                  }`}
+                >
+                  {kindLabel(key)}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="mb-3 flex items-center gap-2">
             {latestSync ? (
               <Pill tone="muted">Last synced {new Date(latestSync).toLocaleString()}</Pill>
@@ -190,7 +220,7 @@ export function AtlClientTabs({
               <Pill tone="muted">Sync not yet configured</Pill>
             )}
           </div>
-          {liveMaterial.length === 0 ? (
+          {currentGroupRows.length === 0 ? (
             <EmptyState
               icon={Radio}
               title="No live material data"
@@ -209,7 +239,7 @@ export function AtlClientTabs({
                   </tr>
                 </thead>
                 <tbody>
-                  {liveMaterial.map((row) => (
+                  {currentGroupRows.map((row) => (
                     <tr key={row.id} className="border-b border-border-c last:border-0">
                       <td className="px-4 py-3">{row.partner}</td>
                       <td className="px-4 py-3">{row.channel}</td>

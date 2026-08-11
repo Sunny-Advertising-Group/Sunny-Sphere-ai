@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { extractDriveFileId, fetchDriveMetadata, mapWithConcurrency } from "@/lib/driveSync";
+import { extractDriveFileId, fetchDriveMetadata, isAuthorizedCronRequest, mapWithConcurrency } from "@/lib/driveSync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,12 +13,8 @@ export const maxDuration = 60;
 // to the folder itself (rename, description), not files added inside it —
 // Drive doesn't roll content changes up to folder modifiedTime.
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = request.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!isAuthorizedCronRequest(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const apiKey = process.env.GOOGLE_DRIVE_API_KEY;
