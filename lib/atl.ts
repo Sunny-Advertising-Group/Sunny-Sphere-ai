@@ -5,6 +5,9 @@ export const KIND_LABELS: Record<string, string> = {
   budget: "Budget",
   assets: "Assets",
   reporting: "Reporting",
+  wag_spends: "WAG spends",
+  whatagraph_report: "Whatagraph report and reporting dashboard",
+  creative_brief: "Creative brief",
   live_material_tracker: "Live material tracker",
 };
 
@@ -16,8 +19,15 @@ export const KIND_ORDER = [
   "budget",
   "assets",
   "reporting",
+  "wag_spends",
+  "whatagraph_report",
+  "creative_brief",
   "live_material_tracker",
 ];
+
+// Dropdown options for the admin ATL link form — single source of truth, kept
+// in step with KIND_LABELS/KIND_ORDER above.
+export const KIND_OPTIONS = KIND_ORDER.map((value) => ({ value, label: KIND_LABELS[value] }));
 
 export function kindLabel(kind: string): string {
   if (KIND_LABELS[kind]) return KIND_LABELS[kind];

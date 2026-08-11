@@ -10,15 +10,7 @@ import {
   updateClient,
 } from "../atl/actions";
 import { Button, Card, EmptyState, Input, Select } from "@/components/ui";
-
-const KINDS = [
-  { value: "flight_plan", label: "Flight plan" },
-  { value: "wip", label: "WIP" },
-  { value: "rate_card", label: "Rate card" },
-  { value: "budget", label: "Budget" },
-  { value: "assets", label: "Assets" },
-  { value: "reporting", label: "Reporting" },
-];
+import { KIND_OPTIONS as KINDS } from "@/lib/atl";
 
 const TEAMS = ["ATL", "Digital", "Comms"];
 
