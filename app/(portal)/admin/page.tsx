@@ -74,7 +74,7 @@ export default async function AdminPage() {
     supabase.from("resources").select("*").eq("section", "learning_path").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "loom").order("sort_order"),
     supabase.from("clients").select("id, name, colour, team, is_active").order("name"),
-    supabase.from("atl_links").select("id, client_id, kind, title, url, version_label").order("sort_order"),
+    supabase.from("atl_links").select("id, client_id, kind, title, url, version_label, cadence").order("sort_order"),
   ]);
 
   const grantsByUser = new Map<string, string[]>();

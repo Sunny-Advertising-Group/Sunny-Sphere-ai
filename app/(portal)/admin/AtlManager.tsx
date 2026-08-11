@@ -10,7 +10,7 @@ import {
   updateClient,
 } from "../atl/actions";
 import { Button, Card, EmptyState, Input, Select } from "@/components/ui";
-import { KIND_OPTIONS as KINDS } from "@/lib/atl";
+import { CADENCE_OPTIONS, cadenceLabel, KIND_OPTIONS as KINDS } from "@/lib/atl";
 
 const TEAMS = ["ATL", "Digital", "Comms"];
 
@@ -29,6 +29,7 @@ export type LinkRow = {
   title: string;
   url: string;
   version_label: string | null;
+  cadence: string | null;
 };
 
 export function AtlManager({ clients, links }: { clients: ClientRow[]; links: LinkRow[] }) {
@@ -282,6 +283,22 @@ function LinkRowItem({ link, onDelete }: { link: LinkRow; onDelete: () => void }
           className="w-28"
           onChange={(e) => setValues((v) => ({ ...v, version_label: e.target.value }))}
         />
+        <Select
+          name="cadence"
+          defaultValue={values.cadence ?? ""}
+          required
+          className="w-40"
+          onChange={(e) => setValues((v) => ({ ...v, cadence: e.target.value }))}
+        >
+          <option value="" disabled>
+            Reporting cadence…
+          </option>
+          {CADENCE_OPTIONS.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </Select>
         <Button type="submit" disabled={pending}>
           {pending ? "…" : "Save"}
         </Button>
@@ -300,6 +317,7 @@ function LinkRowItem({ link, onDelete }: { link: LinkRow; onDelete: () => void }
         <span className="ml-2 text-xs text-charcoal">
           {KINDS.find((k) => k.value === link.kind)?.label ?? link.kind}
           {link.version_label && ` · ${link.version_label}`}
+          {` · ${cadenceLabel(link.cadence)}`}
         </span>
       </div>
       <div className="flex flex-none gap-2">
@@ -340,6 +358,7 @@ function AddLinkInline({ clientId, onAdded }: { clientId: number; onAdded: (l: L
             title: String(fd.get("title")),
             url: String(fd.get("url")),
             version_label: String(fd.get("version_label") ?? "") || null,
+            cadence: String(fd.get("cadence") ?? "") || null,
           });
           formRef.current?.reset();
           setOpen(false);
@@ -358,6 +377,16 @@ function AddLinkInline({ clientId, onAdded }: { clientId: number; onAdded: (l: L
       <Input name="title" placeholder="Title" required className="w-36" />
       <Input name="url" placeholder="Drive link" required className="w-56" />
       <Input name="version_label" placeholder="v4 · 22 Jul" className="w-28" />
+      <Select name="cadence" required defaultValue="" className="w-40">
+        <option value="" disabled>
+          Reporting cadence…
+        </option>
+        {CADENCE_OPTIONS.map((c) => (
+          <option key={c.value} value={c.value}>
+            {c.label}
+          </option>
+        ))}
+      </Select>
       <Button type="submit" disabled={pending}>
         {pending ? "…" : "Add"}
       </Button>

@@ -58,9 +58,10 @@ export async function addAtlLink(_prevState: unknown, formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
   const versionLabel = String(formData.get("version_label") ?? "").trim();
+  const cadence = String(formData.get("cadence") ?? "").trim();
 
-  if (!clientId || !kind || !title || !url) {
-    return { error: "Kind, title and URL are required." };
+  if (!clientId || !kind || !title || !url || !cadence) {
+    return { error: "Kind, title, URL and reporting cadence are required." };
   }
 
   const { error } = await supabase.from("atl_links").insert({
@@ -69,6 +70,7 @@ export async function addAtlLink(_prevState: unknown, formData: FormData) {
     title,
     url,
     version_label: versionLabel || null,
+    cadence,
   });
   if (error) return { error: error.message };
 
@@ -83,14 +85,15 @@ export async function updateAtlLink(_prevState: unknown, formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
   const versionLabel = String(formData.get("version_label") ?? "").trim();
+  const cadence = String(formData.get("cadence") ?? "").trim();
 
-  if (!id || !kind || !title || !url) {
-    return { error: "Kind, title and URL are required." };
+  if (!id || !kind || !title || !url || !cadence) {
+    return { error: "Kind, title, URL and reporting cadence are required." };
   }
 
   const { error } = await supabase
     .from("atl_links")
-    .update({ kind, title, url, version_label: versionLabel || null })
+    .update({ kind, title, url, version_label: versionLabel || null, cadence })
     .eq("id", id);
   if (error) return { error: error.message };
 

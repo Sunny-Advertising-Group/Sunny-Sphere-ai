@@ -33,6 +33,7 @@ npm run dev
 ## Known deferred work
 
 - Live Material Google Sheet sync (hourly cron) — `clients` and `atl_links` are live; `live_material` is wired up but shows a "sync not yet configured" state until Sheets credentials are added.
+- Housekeeping tab's Drive metadata sync — `atl_links.cadence` is captured on every link and drives the tab's status logic, but `drive_modified_at`/`drive_modified_by` stay empty (shown as "Awaiting sync") until a job polls the Drive API (`files.get` with `modifiedTime`/`lastModifyingUser`) for each link's file ID and writes the result back. Needs a Google service account with read access to the tracked files/folders, plus a scheduled job (Vercel Cron or a Supabase Edge Function) to run it hourly.
 - Client-facing `partner` role — not built; can be added without touching existing tables.
 - Custom domain — currently on the default Vercel domain.
 
