@@ -11,6 +11,8 @@
 // visible rather than silently baked in.
 import { parseCsv } from "./csv";
 
+const DAY_MS = 86_400_000;
+
 export const CHANNELS = [
   "OOH",
   "Radio",
@@ -79,14 +81,42 @@ function toIso(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function parseRowDate(s: string): string {
-  const m = /^(\d{1,2})-([A-Za-z]{3,})-(\d{4})$/.exec(s.trim());
-  if (!m) throw new Error(`Unrecognized date format: "${s}"`);
-  const day = parseInt(m[1], 10);
-  const month = MONTH_NAMES[m[2].toLowerCase()];
-  const year = parseInt(m[3], 10);
-  if (month === undefined) throw new Error(`Unrecognized month: "${m[2]}"`);
-  return toIso(new Date(Date.UTC(year, month, day)));
+function parseRowDate(raw: string): string {
+  const s = raw.trim();
+
+  // "1-Jul-2026" — the shape of the one real export this was built against.
+  const dmy = /^(\d{1,2})-([A-Za-z]{3,})-(\d{4})$/.exec(s);
+  if (dmy) {
+    const month = MONTH_NAMES[dmy[2].toLowerCase()];
+    if (month === undefined) throw new Error(`Unrecognized month: "${dmy[2]}"`);
+    return toIso(new Date(Date.UTC(parseInt(dmy[3], 10), month, parseInt(dmy[1], 10))));
+  }
+
+  // "1/07/2026" or "01-07-2026" — day/month/year, the common AU alternative.
+  const slashOrDash = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(s);
+  if (slashOrDash) {
+    const day = parseInt(slashOrDash[1], 10);
+    const month = parseInt(slashOrDash[2], 10) - 1;
+    const year = parseInt(slashOrDash[3], 10);
+    if (month < 0 || month > 11) throw new Error(`Unrecognized date format: "${s}"`);
+    return toIso(new Date(Date.UTC(year, month, day)));
+  }
+
+  // "2026-07-01" — ISO, sometimes what a spreadsheet's own date formatting yields.
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (iso) {
+    return toIso(new Date(Date.UTC(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10))));
+  }
+
+  // A bare number — an Excel/Lotus date serial that slipped through as text
+  // rather than a formatted date cell. Epoch is 1899-12-30 (Excel's, not
+  // ISO's, to match its long-standing 1900 leap-year bug).
+  const serial = /^\d{4,6}$/.exec(s);
+  if (serial) {
+    return toIso(new Date(Date.UTC(1899, 11, 30) + parseInt(serial[0], 10) * DAY_MS));
+  }
+
+  throw new Error(`Unrecognized date format: "${s}"`);
 }
 
 function findMonthYear(text: string): { month: number; year: number } | null {
@@ -173,7 +203,15 @@ const REQUIRED_COLUMNS = {
 };
 
 export function parseSpendCsv(text: string): { rows: ParsedCostRow[]; skipped: number } {
-  const table = parseCsv(text);
+  return parseSpendTable(parseCsv(text));
+}
+
+// Shared by the CSV path (parseSpendCsv, above) and the XLSX path (the
+// upload UI reads the workbook with read-excel-file, then normalizes each
+// cell to a string in the same shape a CSV parse would produce, including
+// formatting Date cells as "D-MMM-YYYY" so parseRowDate below needs no
+// XLSX-specific handling).
+export function parseSpendTable(table: string[][]): { rows: ParsedCostRow[]; skipped: number } {
   if (table.length === 0) return { rows: [], skipped: 0 };
 
   const header = table[0].map((h) => h.trim());
@@ -251,8 +289,6 @@ export type DailySpendEntry = {
   client: string;
   costName: string;
 };
-
-const DAY_MS = 86_400_000;
 
 export function allocateDailySpend(rows: ParsedCostRow[]): DailySpendEntry[] {
   const entries: DailySpendEntry[] = [];

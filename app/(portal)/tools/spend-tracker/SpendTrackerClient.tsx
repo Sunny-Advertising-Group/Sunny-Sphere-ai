@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, Download, Upload } from "lucide-react";
+import { readSheet } from "read-excel-file/browser";
 import { Button, Card, EmptyState, Input, Select } from "@/components/ui";
 import {
   CHANNELS,
@@ -14,9 +15,27 @@ import {
   aggregateMonthlyByChannel,
   aggregateTotals,
   parseSpendCsv,
+  parseSpendTable,
 } from "@/lib/spendTracker";
 
 const currency = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// read-excel-file gives back typed cells (string | number | boolean | Date |
+// null) straight from the workbook; normalize each to the same string shape
+// a CSV parse would produce, so parseSpendTable never needs to know which
+// source format it came from. Dates are written as "D-MMM-YYYY" specifically
+// to match the one real export this tool was built against.
+function excelRowsToTable(sheetRows: unknown[][]): string[][] {
+  return sheetRows.map((row) =>
+    row.map((cell) => {
+      if (cell instanceof Date) {
+        return `${cell.getUTCDate()}-${MONTH_ABBR[cell.getUTCMonth()]}-${cell.getUTCFullYear()}`;
+      }
+      return cell === null || cell === undefined ? "" : String(cell);
+    }),
+  );
+}
 
 function monthLabel(month: string): string {
   return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-AU", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -61,8 +80,10 @@ export function SpendTrackerClient() {
     setParseError(null);
     setFileName(file.name);
     try {
-      const text = await file.text();
-      const { rows: parsed, skipped: skippedCount } = parseSpendCsv(text);
+      const isExcel = /\.xlsx?$/i.test(file.name);
+      const { rows: parsed, skipped: skippedCount } = isExcel
+        ? parseSpendTable(excelRowsToTable(await readSheet(file)))
+        : parseSpendCsv(await file.text());
       setRows(parsed);
       setSkipped(skippedCount);
       if (parsed.length > 0) {
@@ -121,13 +142,13 @@ export function SpendTrackerClient() {
         >
           <Upload className="h-6 w-6 text-charcoal/50" strokeWidth={1.5} aria-hidden />
           <p className="text-sm font-semibold text-ink">
-            {fileName ? `Loaded: ${fileName}` : "Click to upload a spends CSV"}
+            {fileName ? `Loaded: ${fileName}` : "Click to upload a spends CSV or Excel file"}
           </p>
-          <p className="text-xs text-charcoal">Expects the job-costing export shape — [Job] Client, [Job Cost] Date, [Job Cost] Cost Name, [Job Cost] Unit Cost, etc.</p>
+          <p className="text-xs text-charcoal">Expects the job-costing export shape — [Job] Client, [Job Cost] Date, [Job Cost] Cost Name, [Job Cost] Unit Cost, etc. Accepts .csv, .xlsx or .xls.</p>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
