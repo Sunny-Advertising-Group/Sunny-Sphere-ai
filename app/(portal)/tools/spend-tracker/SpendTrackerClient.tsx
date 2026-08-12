@@ -11,6 +11,7 @@ import {
   allocateDailySpend,
   aggregateDaily,
   aggregateMonthly,
+  aggregateMonthlyByChannel,
   aggregateTotals,
   parseSpendCsv,
 } from "@/lib/spendTracker";
@@ -90,6 +91,13 @@ export function SpendTrackerClient() {
   const totals = useMemo(() => aggregateTotals(dailyEntries), [dailyEntries]);
   const daily = useMemo(() => aggregateDaily(dailyEntries), [dailyEntries]);
   const monthGroups = useMemo(() => groupMonthly(aggregateMonthly(dailyEntries)), [dailyEntries]);
+  const channelTotalsByMonth = useMemo(() => {
+    const map = new Map<string, { total: number; avgPerDay: number }>();
+    for (const c of aggregateMonthlyByChannel(dailyEntries)) {
+      map.set(`${c.month}|${c.channel}`, { total: c.total, avgPerDay: c.avgPerDay });
+    }
+    return map;
+  }, [dailyEntries]);
   const grandTotal = totals.reduce((sum, t) => sum + t.total, 0);
 
   function downloadCsv() {
@@ -218,9 +226,18 @@ export function SpendTrackerClient() {
                   <span className="text-sm font-semibold text-charcoal">{currency.format(monthTotal)}</span>
                 </div>
                 <div className="space-y-5">
-                  {channels.map(([channel, platforms]) => (
+                  {channels.map(([channel, platforms]) => {
+                    const channelTotal = channelTotalsByMonth.get(`${month}|${channel}`);
+                    return (
                     <div key={channel}>
-                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gold">{channel}</div>
+                      <div className="mb-2 flex items-baseline justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gold">{channel}</span>
+                        {channelTotal && (
+                          <span className="text-xs font-semibold text-charcoal">
+                            {currency.format(channelTotal.avgPerDay)}/day · {currency.format(channelTotal.total)} this month
+                          </span>
+                        )}
+                      </div>
                       <Card className="overflow-x-auto p-0">
                         <table className="w-full text-sm">
                           <thead>
@@ -244,7 +261,8 @@ export function SpendTrackerClient() {
                         </table>
                       </Card>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}
