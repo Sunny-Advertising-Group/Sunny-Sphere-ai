@@ -10,7 +10,7 @@ export default async function SpendTrackerPage() {
   return (
     <div>
       <PageHeader
-        title="Spend tracker"
+        title="WAG Spend Tracker"
         description="Upload a job-costing export to see daily spend by channel and platform. Nothing is saved — this is calculated fresh each time."
         backHref="/tools"
         backLabel="Back to Tools"
