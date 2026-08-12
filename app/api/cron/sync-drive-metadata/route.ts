@@ -5,8 +5,8 @@ import { extractDriveFileId, fetchDriveMetadata, isAuthorizedCronRequest, mapWit
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Hourly Drive metadata sync for the Housekeeping tab (see vercel.json for the
-// schedule). Refreshes drive_modified_at/drive_modified_by for every atl_links
+// Daily (4pm AEST / 06:00 UTC) Drive metadata sync for the Housekeeping tab
+// (see vercel.json for the schedule). Refreshes drive_modified_at/drive_modified_by for every atl_links
 // row that has a tracked cadence, by reading the underlying Drive file's
 // metadata via a plain API key — which only works because those files are
 // shared "Anyone with the link can view". Folder links only reflect changes
