@@ -6,14 +6,45 @@ import { Button, Card, EmptyState, Input, Select } from "@/components/ui";
 import {
   CHANNELS,
   type Channel,
+  type MonthlyTotal,
   type ParsedCostRow,
   allocateDailySpend,
   aggregateDaily,
+  aggregateMonthly,
   aggregateTotals,
   parseSpendCsv,
 } from "@/lib/spendTracker";
 
 const currency = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
+
+function monthLabel(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-AU", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+// Month -> Channel -> platform rows, so the report reads as a drill-down
+// rather than one flat table mixing every month and channel together.
+function groupMonthly(rows: MonthlyTotal[]) {
+  const byMonth = new Map<string, MonthlyTotal[]>();
+  for (const r of rows) {
+    const list = byMonth.get(r.month) ?? [];
+    list.push(r);
+    byMonth.set(r.month, list);
+  }
+  return Array.from(byMonth.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, monthRows]) => {
+      const byChannel = new Map<Channel, MonthlyTotal[]>();
+      for (const r of monthRows) {
+        const list = byChannel.get(r.channel) ?? [];
+        list.push(r);
+        byChannel.set(r.channel, list);
+      }
+      const channels = Array.from(byChannel.entries()).sort(
+        ([, a], [, b]) => b.reduce((s, r) => s + r.total, 0) - a.reduce((s, r) => s + r.total, 0),
+      );
+      return { month, monthTotal: monthRows.reduce((s, r) => s + r.total, 0), channels };
+    });
+}
 
 export function SpendTrackerClient() {
   const [rows, setRows] = useState<ParsedCostRow[] | null>(null);
@@ -58,6 +89,7 @@ export function SpendTrackerClient() {
   const dailyEntries = useMemo(() => allocateDailySpend(filteredRows), [filteredRows]);
   const totals = useMemo(() => aggregateTotals(dailyEntries), [dailyEntries]);
   const daily = useMemo(() => aggregateDaily(dailyEntries), [dailyEntries]);
+  const monthGroups = useMemo(() => groupMonthly(aggregateMonthly(dailyEntries)), [dailyEntries]);
   const grandTotal = totals.reduce((sum, t) => sum + t.total, 0);
 
   function downloadCsv() {
@@ -178,32 +210,44 @@ export function SpendTrackerClient() {
             </Card>
           </div>
 
-          <div>
-            <h2 className="mb-3 text-sm font-bold text-ink">Spend by channel &amp; platform</h2>
-            <Card className="overflow-x-auto p-0">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border-c text-left text-xs uppercase text-charcoal">
-                    <th className="px-4 py-3">Channel</th>
-                    <th className="px-4 py-3">Platform</th>
-                    <th className="px-4 py-3">Days active</th>
-                    <th className="px-4 py-3">Avg per day</th>
-                    <th className="px-4 py-3">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {totals.map((t) => (
-                    <tr key={`${t.channel}|${t.platform}`} className="border-b border-border-c last:border-0">
-                      <td className="px-4 py-3 font-medium text-ink">{t.channel}</td>
-                      <td className="px-4 py-3 text-charcoal">{t.platform}</td>
-                      <td className="px-4 py-3 text-charcoal">{t.dayCount}</td>
-                      <td className="px-4 py-3">{currency.format(t.avgPerDay)}</td>
-                      <td className="px-4 py-3 font-semibold text-ink">{currency.format(t.total)}</td>
-                    </tr>
+          <div className="space-y-8">
+            {monthGroups.map(({ month, monthTotal, channels }) => (
+              <div key={month}>
+                <div className="mb-3 flex items-baseline justify-between">
+                  <h2 className="text-base font-bold text-ink">{monthLabel(month)}</h2>
+                  <span className="text-sm font-semibold text-charcoal">{currency.format(monthTotal)}</span>
+                </div>
+                <div className="space-y-5">
+                  {channels.map(([channel, platforms]) => (
+                    <div key={channel}>
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gold">{channel}</div>
+                      <Card className="overflow-x-auto p-0">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border-c text-left text-xs uppercase text-charcoal">
+                              <th className="px-4 py-3">Media platform</th>
+                              <th className="px-4 py-3">Days active</th>
+                              <th className="px-4 py-3">Daily spend</th>
+                              <th className="px-4 py-3">Total for month</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {platforms.map((p) => (
+                              <tr key={p.platform} className="border-b border-border-c last:border-0">
+                                <td className="px-4 py-3 font-medium text-ink">{p.platform}</td>
+                                <td className="px-4 py-3 text-charcoal">{p.dayCount}</td>
+                                <td className="px-4 py-3">{currency.format(p.avgPerDay)}</td>
+                                <td className="px-4 py-3 font-semibold text-ink">{currency.format(p.total)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </Card>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </Card>
+                </div>
+              </div>
+            ))}
           </div>
 
           {showDaily && (

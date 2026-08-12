@@ -305,3 +305,33 @@ export function aggregateTotals(entries: DailySpendEntry[]) {
     .map((v) => ({ channel: v.channel, platform: v.platform, total: v.total, avgPerDay: v.total / v.days.size, dayCount: v.days.size }))
     .sort((a, b) => b.total - a.total);
 }
+
+export type MonthlyTotal = {
+  month: string; // "YYYY-MM"
+  channel: Channel;
+  platform: string;
+  total: number;
+  avgPerDay: number;
+  dayCount: number;
+};
+
+// Same shape as aggregateTotals, but split by calendar month — so a platform
+// booked across several months (e.g. June + July) shows its own daily rate
+// per month instead of one blended average across both.
+export function aggregateMonthly(entries: DailySpendEntry[]): MonthlyTotal[] {
+  const map = new Map<string, { month: string; channel: Channel; platform: string; total: number; days: Set<string> }>();
+  for (const e of entries) {
+    const month = e.date.slice(0, 7);
+    const key = `${month}|${e.channel}|${e.platform}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.total += e.amount;
+      existing.days.add(e.date);
+    } else {
+      map.set(key, { month, channel: e.channel, platform: e.platform, total: e.amount, days: new Set([e.date]) });
+    }
+  }
+  return Array.from(map.values())
+    .map((v) => ({ month: v.month, channel: v.channel, platform: v.platform, total: v.total, avgPerDay: v.total / v.days.size, dayCount: v.days.size }))
+    .sort((a, b) => a.month.localeCompare(b.month) || b.total - a.total);
+}
