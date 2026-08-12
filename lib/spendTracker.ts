@@ -335,3 +335,27 @@ export function aggregateMonthly(entries: DailySpendEntry[]): MonthlyTotal[] {
     .map((v) => ({ month: v.month, channel: v.channel, platform: v.platform, total: v.total, avgPerDay: v.total / v.days.size, dayCount: v.days.size }))
     .sort((a, b) => a.month.localeCompare(b.month) || b.total - a.total);
 }
+
+export type MonthlyChannelTotal = { month: string; channel: Channel; total: number; avgPerDay: number; dayCount: number };
+
+// Channel-level rollup per month (summed across all its platforms). Computed
+// from the raw daily entries rather than by summing the per-platform
+// aggregateMonthly rows, so the day count reflects distinct days the channel
+// was active — not a sum that could double-count overlapping days.
+export function aggregateMonthlyByChannel(entries: DailySpendEntry[]): MonthlyChannelTotal[] {
+  const map = new Map<string, { month: string; channel: Channel; total: number; days: Set<string> }>();
+  for (const e of entries) {
+    const month = e.date.slice(0, 7);
+    const key = `${month}|${e.channel}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.total += e.amount;
+      existing.days.add(e.date);
+    } else {
+      map.set(key, { month, channel: e.channel, total: e.amount, days: new Set([e.date]) });
+    }
+  }
+  return Array.from(map.values())
+    .map((v) => ({ month: v.month, channel: v.channel, total: v.total, avgPerDay: v.total / v.days.size, dayCount: v.days.size }))
+    .sort((a, b) => a.month.localeCompare(b.month) || b.total - a.total);
+}
