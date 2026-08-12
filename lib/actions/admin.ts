@@ -31,8 +31,14 @@ export async function inviteMember(_prevState: unknown, formData: FormData) {
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
   const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${siteUrl}/invite`,
+  // generateLink creates the pending user and returns the invite link directly,
+  // rather than emailing it — Supabase's own mailer is too rate-limited for
+  // real use, and setting up SMTP requires verifying a sending domain. This
+  // way an admin copies the link and sends it themselves (Slack, email, etc).
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: { redirectTo: `${siteUrl}/invite` },
   });
   if (error) return { error: error.message };
 
@@ -45,7 +51,7 @@ export async function inviteMember(_prevState: unknown, formData: FormData) {
   }
 
   revalidatePath("/admin");
-  return { success: `Invited ${email}.` };
+  return { success: `Invite link ready for ${email}.`, inviteLink: data.properties?.action_link };
 }
 
 export async function reviewTool(toolId: number, status: "published" | "rejected") {
