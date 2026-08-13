@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Link2, Radio } from "lucide-react";
 import { Card, EmptyState, Pill } from "@/components/ui";
-import { cadenceLabel, HOUSEKEEPING_STATUS_META, housekeepingStatus, kindLabel } from "@/lib/atl";
+import { cadenceLabel, HOUSEKEEPING_STATUS_META, housekeepingStatus, kindLabel, liveMaterialStatusClassName } from "@/lib/atl";
 
 export type AtlLinkRow = {
   id: number;
@@ -244,7 +244,15 @@ export function AtlClientTabs({
                       <td className="px-4 py-3">{row.partner}</td>
                       <td className="px-4 py-3">{row.channel}</td>
                       <td className="px-4 py-3">{row.asset_name}</td>
-                      <td className="px-4 py-3">{row.status}</td>
+                      <td className="px-4 py-3">
+                        {row.status ? (
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${liveMaterialStatusClassName(row.status)}`}>
+                            {row.status}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="px-4 py-3">{row.due_date}</td>
                     </tr>
                   ))}
