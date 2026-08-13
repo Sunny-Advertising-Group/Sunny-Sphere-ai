@@ -123,3 +123,18 @@ export const HOUSEKEEPING_STATUS_META: Record<
   not_tracked: { label: "Not tracked", className: "text-charcoal bg-black/5" },
   awaiting_sync: { label: "Awaiting sync", className: "text-charcoal bg-black/5" },
 };
+
+// Colour coding for the Live material tab's STATUS column. Only these four
+// statuses ever reach this table (lib/liveMaterial.ts filters the rest out at
+// sync time), so anything else falls back to a neutral style.
+const LIVE_MATERIAL_STATUS_CLASSNAMES: Record<string, string> = {
+  live: "text-emerald-700 bg-emerald-50",
+  "extended live": "text-emerald-700 bg-emerald-50",
+  "expiring soon": "text-blue-700 bg-blue-50",
+  upcoming: "text-yellow-700 bg-yellow-50",
+};
+
+export function liveMaterialStatusClassName(status: string | null): string {
+  if (!status) return "text-charcoal bg-black/5";
+  return LIVE_MATERIAL_STATUS_CLASSNAMES[status.trim().toLowerCase()] ?? "text-charcoal bg-black/5";
+}

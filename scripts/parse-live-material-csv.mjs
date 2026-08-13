@@ -8,7 +8,8 @@
 // CAMPAIGN, CHANNEL TYPE, CHANNEL, MARKET, ASSET TYPE, ASSET KEY, MESSAGING,
 // ROTATION, START DATE, END DATE, STATUS, DRIVE LINK, NOTES
 // Plus decorative campaign-group rows (e.g. "  LGCTH,,,,,,,,,,,") and blank
-// separator rows, which are skipped.
+// separator rows, which are skipped. Only rows whose STATUS is Live, Extended
+// Live, Expiring Soon, or Upcoming are kept — see ALLOWED_STATUSES below.
 
 function parseCsv(text) {
   const rows = [];
@@ -67,6 +68,8 @@ function isGroupHeaderRow(cells) {
   return (cells[0] || "").trim() !== "" && isBlankRow(cells.slice(1, 5));
 }
 
+const ALLOWED_STATUSES = new Set(["live", "extended live", "expiring soon", "upcoming"]);
+
 export function parseLiveMaterial(csvText) {
   const rows = parseCsv(csvText);
   const out = [];
@@ -80,6 +83,8 @@ export function parseLiveMaterial(csvText) {
     if (cells.length < 11) continue;
 
     const [campaign, channelType, channel, , assetType, assetKey, messaging, rotation, startDate, endDate, status] = cells;
+    const trimmedStatus = (status || "").trim();
+    if (!ALLOWED_STATUSES.has(trimmedStatus.toLowerCase())) continue;
 
     out.push({
       partner: (channel || "").trim() || null,
@@ -88,7 +93,7 @@ export function parseLiveMaterial(csvText) {
       flight_dates: [startDate, endDate].map((s) => (s || "").trim()).filter(Boolean).join(" – ") || null,
       material_key: (assetKey || "").trim() || null,
       rotation: (rotation || "").trim() || null,
-      status: (status || "").trim() || null,
+      status: trimmedStatus || null,
       due_date: ddmmyyyyToIso(endDate),
     });
   }
