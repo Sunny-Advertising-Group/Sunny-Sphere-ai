@@ -28,7 +28,7 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
       .order("sort_order"),
     supabase
       .from("live_material")
-      .select("id, partner, channel, asset_name, status, due_date, synced_at, source_kind")
+      .select("id, partner, channel, asset_name, asset_link, messaging, status, start_date, due_date, synced_at, source_kind")
       .eq("client_id", client.id)
       .order("due_date"),
   ]);

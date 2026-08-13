@@ -21,7 +21,10 @@ export type LiveMaterialRow = {
   partner: string | null;
   channel: string | null;
   asset_name: string | null;
+  asset_link: string | null;
+  messaging: string | null;
   status: string | null;
+  start_date: string | null;
   due_date: string | null;
   synced_at: string | null;
   source_kind: string | null;
@@ -231,11 +234,14 @@ export function AtlClientTabs({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border-c text-left text-xs uppercase text-charcoal">
-                    <th className="px-4 py-3">Partner</th>
+                    <th className="px-4 py-3">Media partner</th>
                     <th className="px-4 py-3">Channel</th>
                     <th className="px-4 py-3">Asset</th>
+                    <th className="px-4 py-3">Messaging</th>
+                    <th className="px-4 py-3">Start</th>
+                    <th className="px-4 py-3">End</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Due</th>
+                    <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -244,6 +250,9 @@ export function AtlClientTabs({
                       <td className="px-4 py-3">{row.partner}</td>
                       <td className="px-4 py-3">{row.channel}</td>
                       <td className="px-4 py-3">{row.asset_name}</td>
+                      <td className="px-4 py-3">{row.messaging}</td>
+                      <td className="px-4 py-3">{row.start_date}</td>
+                      <td className="px-4 py-3">{row.due_date}</td>
                       <td className="px-4 py-3">
                         {row.status ? (
                           <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${liveMaterialStatusClassName(row.status)}`}>
@@ -253,7 +262,20 @@ export function AtlClientTabs({
                           "—"
                         )}
                       </td>
-                      <td className="px-4 py-3">{row.due_date}</td>
+                      <td className="px-4 py-3 text-right">
+                        {row.asset_link ? (
+                          <a
+                            href={row.asset_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-lg border border-border-c px-3 py-1.5 text-xs font-semibold text-ink hover:border-gold/50"
+                          >
+                            Open ↗
+                          </a>
+                        ) : (
+                          <span className="text-charcoal">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -82,7 +82,7 @@ export function parseLiveMaterial(csvText) {
     if (isGroupHeaderRow(cells)) continue;
     if (cells.length < 11) continue;
 
-    const [campaign, channelType, channel, , assetType, assetKey, messaging, rotation, startDate, endDate, status] = cells;
+    const [campaign, channelType, channel, , assetType, assetKey, messaging, rotation, startDate, endDate, status, driveLink] = cells;
     const trimmedStatus = (status || "").trim();
     if (!ALLOWED_STATUSES.has(trimmedStatus.toLowerCase())) continue;
 
@@ -90,10 +90,13 @@ export function parseLiveMaterial(csvText) {
       partner: (channel || "").trim() || null,
       channel: (channelType || "").trim() || null,
       asset_name: [campaign, assetType].map((s) => (s || "").trim()).filter(Boolean).join(" — ") || null,
+      asset_link: (driveLink || "").trim() || null,
       flight_dates: [startDate, endDate].map((s) => (s || "").trim()).filter(Boolean).join(" – ") || null,
       material_key: (assetKey || "").trim() || null,
       rotation: (rotation || "").trim() || null,
+      messaging: (messaging || "").trim() || null,
       status: trimmedStatus || null,
+      start_date: ddmmyyyyToIso(startDate),
       due_date: ddmmyyyyToIso(endDate),
     });
   }
