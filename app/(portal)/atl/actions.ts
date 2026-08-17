@@ -3,25 +3,53 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
-export async function addClient(_prevState: unknown, formData: FormData) {
+type ClientRow = {
+  id: number;
+  name: string;
+  colour: string | null;
+  team: string;
+  is_active: boolean;
+};
+
+type LinkRow = {
+  id: number;
+  client_id: number;
+  kind: string;
+  title: string;
+  url: string;
+  version_label: string | null;
+  cadence: string | null;
+};
+
+export async function addClient(
+  _prevState: unknown,
+  formData: FormData,
+): Promise<{ error: string } | { success: true; client: ClientRow }> {
   const supabase = await createClient();
   const name = String(formData.get("name") ?? "").trim();
   const colour = String(formData.get("colour") ?? "").trim();
   const team = String(formData.get("team") ?? "ATL").trim();
   if (!name) return { error: "Client name is required." };
 
-  const { error } = await supabase.from("clients").insert({
-    name,
-    colour: colour || null,
-    team,
-  });
+  const { data, error } = await supabase
+    .from("clients")
+    .insert({
+      name,
+      colour: colour || null,
+      team,
+    })
+    .select()
+    .single();
   if (error) return { error: error.message };
 
   revalidatePath("/atl");
-  return { success: true };
+  return { success: true, client: data };
 }
 
-export async function updateClient(_prevState: unknown, formData: FormData) {
+export async function updateClient(
+  _prevState: unknown,
+  formData: FormData,
+): Promise<{ error: string } | { success: true }> {
   const supabase = await createClient();
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
@@ -51,7 +79,10 @@ export async function deleteClient(id: number) {
   return { success: true };
 }
 
-export async function addAtlLink(_prevState: unknown, formData: FormData) {
+export async function addAtlLink(
+  _prevState: unknown,
+  formData: FormData,
+): Promise<{ error: string } | { success: true; link: LinkRow }> {
   const supabase = await createClient();
   const clientId = Number(formData.get("client_id"));
   const kind = String(formData.get("kind") ?? "").trim();
@@ -64,21 +95,29 @@ export async function addAtlLink(_prevState: unknown, formData: FormData) {
     return { error: "Kind, title, URL and reporting cadence are required." };
   }
 
-  const { error } = await supabase.from("atl_links").insert({
-    client_id: clientId,
-    kind,
-    title,
-    url,
-    version_label: versionLabel || null,
-    cadence,
-  });
+  const { data, error } = await supabase
+    .from("atl_links")
+    .insert({
+      client_id: clientId,
+      kind,
+      title,
+      url,
+      version_label: versionLabel || null,
+      cadence,
+    })
+    .select()
+    .single();
   if (error) return { error: error.message };
 
   revalidatePath(`/atl`);
-  return { success: true };
+  revalidatePath("/admin");
+  return { success: true, link: data };
 }
 
-export async function updateAtlLink(_prevState: unknown, formData: FormData) {
+export async function updateAtlLink(
+  _prevState: unknown,
+  formData: FormData,
+): Promise<{ error: string } | { success: true }> {
   const supabase = await createClient();
   const id = Number(formData.get("id"));
   const kind = String(formData.get("kind") ?? "").trim();
