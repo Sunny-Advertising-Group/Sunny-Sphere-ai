@@ -185,7 +185,7 @@ export type ParsedCostRow = {
   jobName: string;
   costName: string;
   date: string;
-  unitCost: number;
+  unitPrice: number;
   channel: Channel;
   channelWasFlagged: boolean;
   platform: string;
@@ -199,7 +199,7 @@ const REQUIRED_COLUMNS = {
   jobName: "[Job] Name",
   date: "[Job Cost] Date",
   costName: "[Job Cost] Cost Name",
-  unitCost: "[Job Cost] Unit Cost",
+  unitPrice: "[Job Cost] Unit Price",
 };
 
 export function parseSpendCsv(text: string): { rows: ParsedCostRow[]; skipped: number } {
@@ -226,7 +226,7 @@ export function parseSpendTable(table: string[][]): { rows: ParsedCostRow[]; ski
     jobName: colIndex(REQUIRED_COLUMNS.jobName),
     date: colIndex(REQUIRED_COLUMNS.date),
     costName: colIndex(REQUIRED_COLUMNS.costName),
-    unitCost: colIndex(REQUIRED_COLUMNS.unitCost),
+    unitPrice: colIndex(REQUIRED_COLUMNS.unitPrice),
   };
 
   const rows: ParsedCostRow[] = [];
@@ -237,15 +237,15 @@ export function parseSpendTable(table: string[][]): { rows: ParsedCostRow[]; ski
     if (cells.every((c) => c.trim() === "")) continue;
 
     const costName = (cells[col.costName] ?? "").trim();
-    const unitCostRaw = (cells[col.unitCost] ?? "").trim();
+    const unitPriceRaw = (cells[col.unitPrice] ?? "").trim();
     const dateRaw = (cells[col.date] ?? "").trim();
-    if (!costName || !unitCostRaw || !dateRaw) {
+    if (!costName || !unitPriceRaw || !dateRaw) {
       skipped++;
       continue;
     }
 
-    const unitCost = parseFloat(unitCostRaw.replace(/,/g, ""));
-    if (!Number.isFinite(unitCost)) {
+    const unitPrice = parseFloat(unitPriceRaw.replace(/,/g, ""));
+    if (!Number.isFinite(unitPrice)) {
       skipped++;
       continue;
     }
@@ -269,7 +269,7 @@ export function parseSpendTable(table: string[][]): { rows: ParsedCostRow[]; ski
       jobName: (cells[col.jobName] ?? "").trim(),
       costName,
       date,
-      unitCost,
+      unitPrice,
       channel: channel ?? "Miscellaneous",
       channelWasFlagged: channel === null,
       platform,
@@ -296,7 +296,7 @@ export function allocateDailySpend(rows: ParsedCostRow[]): DailySpendEntry[] {
     const startMs = Date.parse(`${row.periodStart}T00:00:00Z`);
     const endMs = Date.parse(`${row.periodEnd}T00:00:00Z`);
     const numDays = Math.round((endMs - startMs) / DAY_MS) + 1;
-    const perDay = row.unitCost / numDays;
+    const perDay = row.unitPrice / numDays;
 
     for (let t = startMs; t <= endMs; t += DAY_MS) {
       entries.push({
