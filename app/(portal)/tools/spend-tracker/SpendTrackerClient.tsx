@@ -144,7 +144,7 @@ export function SpendTrackerClient() {
           <p className="text-sm font-semibold text-ink">
             {fileName ? `Loaded: ${fileName}` : "Click to upload a spends CSV or Excel file"}
           </p>
-          <p className="text-xs text-charcoal">Expects the job-costing export shape — [Job] Client, [Job Cost] Date, [Job Cost] Cost Name, [Job Cost] Unit Cost, etc. Accepts .csv, .xlsx or .xls.</p>
+          <p className="text-xs text-charcoal">Expects the job-costing export shape — [Job] Client, [Job Cost] Date, [Job Cost] Cost Name, [Job Cost] Unit Price, etc. Accepts .csv, .xlsx or .xls.</p>
           <input
             ref={fileInputRef}
             type="file"
@@ -159,7 +159,7 @@ export function SpendTrackerClient() {
         {parseError && <p className="mt-3 text-sm font-medium text-red-600">{parseError}</p>}
         {rows && skipped > 0 && (
           <p className="mt-3 text-xs text-charcoal">
-            {skipped} row{skipped === 1 ? "" : "s"} skipped (missing date, cost name, or unit cost).
+            {skipped} row{skipped === 1 ? "" : "s"} skipped (missing date, cost name, or unit price).
           </p>
         )}
       </Card>
@@ -184,7 +184,7 @@ export function SpendTrackerClient() {
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-ink">{row.costName}</div>
                       <div className="text-xs text-charcoal">
-                        {row.client} · {row.date} · {currency.format(row.unitCost)}
+                        {row.client} · {row.date} · {currency.format(row.unitPrice)}
                       </div>
                     </div>
                     <Select
