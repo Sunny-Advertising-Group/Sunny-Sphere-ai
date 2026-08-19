@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import {
   addAtlLink,
   addClient,
@@ -421,7 +421,8 @@ function ClientFieldset({
 
 function AddClientForm({ onAdded }: { onAdded: (c: ClientRow) => void }) {
   const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState(addClient, undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
   const [values, setValues] = useState<ClientRow>({
     id: 0,
@@ -446,18 +447,24 @@ function AddClientForm({ onAdded }: { onAdded: (c: ClientRow) => void }) {
     );
   }
 
+  function handleSubmit(fd: FormData) {
+    setError(null);
+    startTransition(async () => {
+      const result = await addClient(undefined, fd);
+      if (result?.client) {
+        onAdded(result.client);
+        formRef.current?.reset();
+        setOpen(false);
+      } else if (result?.error) {
+        setError(result.error);
+      }
+    });
+  }
+
   return (
     <form
       ref={formRef}
-      action={async (fd) => {
-        const result = await formAction(fd);
-        const client = (result as { success?: boolean; client?: ClientRow } | undefined)?.client;
-        if (client) {
-          onAdded(client);
-          formRef.current?.reset();
-          setOpen(false);
-        }
-      }}
+      action={handleSubmit}
       className="flex flex-wrap items-end gap-2 rounded-xl border border-border-c bg-white p-4"
     >
       <ClientFieldset people={[]} values={values} onChange={(updater) => setValues(updater)} />
@@ -467,7 +474,7 @@ function AddClientForm({ onAdded }: { onAdded: (c: ClientRow) => void }) {
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-charcoal hover:text-ink">
         Cancel
       </button>
-      {state?.error && <p className="w-full text-xs font-medium text-red-600">{state.error}</p>}
+      {error && <p className="w-full text-xs font-medium text-red-600">{error}</p>}
     </form>
   );
 }
@@ -483,18 +490,22 @@ function EditClientForm({
   onSaved: (updated: Partial<ClientRow>) => void;
   onCancel: () => void;
 }) {
-  const [state, formAction, pending] = useActionState(updateClient, undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const [values, setValues] = useState(client);
+
+  function handleSubmit(fd: FormData) {
+    setError(null);
+    startTransition(async () => {
+      const result = await updateClient(undefined, fd);
+      if (result?.client) onSaved(result.client);
+      else if (result?.error) setError(result.error);
+    });
+  }
 
   return (
     <Card>
-      <form
-        action={async (fd) => {
-          const result = await formAction(fd);
-          if ((result as { success?: boolean } | undefined)?.success) onSaved(values);
-        }}
-        className="flex flex-wrap items-end gap-2"
-      >
+      <form action={handleSubmit} className="flex flex-wrap items-end gap-2">
         <input type="hidden" name="id" value={client.id} />
         <ClientFieldset people={people} values={values} onChange={(updater) => setValues(updater)} />
         <Button type="submit" disabled={pending}>
@@ -503,7 +514,7 @@ function EditClientForm({
         <button type="button" onClick={onCancel} className="text-xs text-charcoal hover:text-ink">
           Cancel
         </button>
-        {state?.error && <p className="w-full text-xs font-medium text-red-600">{state.error}</p>}
+        {error && <p className="w-full text-xs font-medium text-red-600">{error}</p>}
       </form>
     </Card>
   );
@@ -511,18 +522,22 @@ function EditClientForm({
 
 function LinkRowItem({ link, onDelete }: { link: LinkRow; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
-  const [state, formAction, pending] = useActionState(updateAtlLink, undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const [values, setValues] = useState(link);
+
+  function handleSubmit(fd: FormData) {
+    setError(null);
+    startTransition(async () => {
+      const result = await updateAtlLink(undefined, fd);
+      if (result?.success) setEditing(false);
+      else if (result?.error) setError(result.error);
+    });
+  }
 
   if (editing) {
     return (
-      <form
-        action={async (fd) => {
-          const result = await formAction(fd);
-          if ((result as { success?: boolean } | undefined)?.success) setEditing(false);
-        }}
-        className="flex flex-wrap items-end gap-2 rounded-lg border border-gold/40 bg-bg p-2"
-      >
+      <form action={handleSubmit} className="flex flex-wrap items-end gap-2 rounded-lg border border-gold/40 bg-bg p-2">
         <input type="hidden" name="id" value={link.id} />
         <Select
           name="kind"
@@ -578,7 +593,7 @@ function LinkRowItem({ link, onDelete }: { link: LinkRow; onDelete: () => void }
         <button type="button" onClick={() => setEditing(false)} className="text-xs text-charcoal hover:text-ink">
           Cancel
         </button>
-        {state?.error && <p className="w-full text-xs font-medium text-red-600">{state.error}</p>}
+        {error && <p className="w-full text-xs font-medium text-red-600">{error}</p>}
       </form>
     );
   }
@@ -607,7 +622,8 @@ function LinkRowItem({ link, onDelete }: { link: LinkRow; onDelete: () => void }
 
 function AddLinkInline({ clientId, onAdded }: { clientId: number; onAdded: (l: LinkRow) => void }) {
   const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState(addAtlLink, undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
 
   if (!open) {
@@ -618,18 +634,24 @@ function AddLinkInline({ clientId, onAdded }: { clientId: number; onAdded: (l: L
     );
   }
 
+  function handleSubmit(fd: FormData) {
+    setError(null);
+    startTransition(async () => {
+      const result = await addAtlLink(undefined, fd);
+      if (result?.link) {
+        onAdded(result.link);
+        formRef.current?.reset();
+        setOpen(false);
+      } else if (result?.error) {
+        setError(result.error);
+      }
+    });
+  }
+
   return (
     <form
       ref={formRef}
-      action={async (fd) => {
-        const result = await formAction(fd);
-        const link = (result as { success?: boolean; link?: LinkRow } | undefined)?.link;
-        if (link) {
-          onAdded(link);
-          formRef.current?.reset();
-          setOpen(false);
-        }
-      }}
+      action={handleSubmit}
       className="flex flex-wrap items-end gap-2 rounded-lg border border-border-c bg-bg p-2"
     >
       <input type="hidden" name="client_id" value={clientId} />
@@ -659,7 +681,7 @@ function AddLinkInline({ clientId, onAdded }: { clientId: number; onAdded: (l: L
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-charcoal hover:text-ink">
         Cancel
       </button>
-      {state?.error && <p className="w-full text-xs font-medium text-red-600">{state.error}</p>}
+      {error && <p className="w-full text-xs font-medium text-red-600">{error}</p>}
     </form>
   );
 }

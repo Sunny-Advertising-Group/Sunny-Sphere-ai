@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Pencil } from "lucide-react";
 import { Button, Card, EmptyState, Input } from "@/components/ui";
 import {
@@ -235,18 +235,22 @@ function StatTile({ label, value }: { label: string; value: string }) {
 
 function ScheduleTile({ label, isAdmin }: { label: string | null; isAdmin: boolean }) {
   const [editing, setEditing] = useState(false);
-  const [state, formAction, pending] = useActionState(updateScheduleLabel, undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(fd: FormData) {
+    setError(null);
+    startTransition(async () => {
+      const result = await updateScheduleLabel(undefined, fd);
+      if (result?.success) setEditing(false);
+      else if (result?.error) setError(result.error);
+    });
+  }
 
   if (editing) {
     return (
       <Card>
-        <form
-          action={async (fd) => {
-            const result = await formAction(fd);
-            if ((result as { success?: boolean } | undefined)?.success) setEditing(false);
-          }}
-          className="space-y-2"
-        >
+        <form action={handleSubmit} className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
           <Input name="schedule_label" defaultValue={label ?? ""} placeholder="e.g. PBR & BLUE" autoFocus />
           <div className="flex gap-2">
@@ -257,7 +261,7 @@ function ScheduleTile({ label, isAdmin }: { label: string | null; isAdmin: boole
               Cancel
             </button>
           </div>
-          {state?.error && <p className="text-xs font-medium text-red-600">{state.error}</p>}
+          {error && <p className="text-xs font-medium text-red-600">{error}</p>}
         </form>
       </Card>
     );
