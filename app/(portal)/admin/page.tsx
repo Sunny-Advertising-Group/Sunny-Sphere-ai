@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui";
+import { AccordionGroup, AccordionItem } from "@/components/Accordion";
 import { AddResourceForm } from "@/components/AddResourceForm";
 import { InviteForm } from "./InviteForm";
 import { ToolQueue } from "./ToolQueue";
@@ -13,6 +14,8 @@ import { TicketsInbox } from "./TicketsInbox";
 import { PeopleTable, type Person } from "./PeopleTable";
 import { ResourceList } from "./ResourceList";
 import { AtlManager } from "./AtlManager";
+import { DigitalClientsManager, type LeadOption } from "./DigitalClientsManager";
+import { DigitalOptiLogViewer, type OptiLogRow } from "./DigitalOptiLogViewer";
 
 export default async function AdminPage() {
   const visibility = await getVisibility();
@@ -35,6 +38,9 @@ export default async function AdminPage() {
     { data: loomVideos },
     { data: clients },
     { data: atlLinks },
+    { data: digitalClients },
+    { data: digitalChannels },
+    { data: rawOptiLogs },
   ] = await Promise.all([
     supabase
       .from("tools")
@@ -75,6 +81,20 @@ export default async function AdminPage() {
     supabase.from("resources").select("*").eq("section", "loom").order("sort_order"),
     supabase.from("clients").select("id, name, colour, team, is_active").order("name"),
     supabase.from("atl_links").select("id, client_id, kind, title, url, version_label, cadence").order("sort_order"),
+    supabase
+      .from("digital_clients")
+      .select("id, name, colour, lead_id, retainer, wip_doc_url, status")
+      .order("name"),
+    supabase
+      .from("digital_client_channels")
+      .select("id, client_id, channel, cadence, is_active"),
+    supabase
+      .from("digital_opti_logs")
+      .select(
+        "id, completed_at, voided_at, completed_by:profiles!digital_opti_logs_completed_by_fkey(full_name, email), voided_by:profiles!digital_opti_logs_voided_by_fkey(full_name, email), channel:digital_client_channels(channel, client:digital_clients(name))",
+      )
+      .order("completed_at", { ascending: false })
+      .limit(200),
   ]);
 
   const grantsByUser = new Map<string, string[]>();
@@ -93,86 +113,109 @@ export default async function AdminPage() {
     grantedSections: grantsByUser.get(p.id) ?? [],
   }));
 
+  const leadOptions: LeadOption[] = (profiles ?? []).map((p) => ({
+    id: p.id,
+    label: p.full_name || p.email,
+  }));
+
+  const optiLogs: OptiLogRow[] = (rawOptiLogs ?? [])
+    .filter((l) => l.channel)
+    .map((l) => {
+      const channel = l.channel as unknown as { channel: string; client: { name: string } | null };
+      const completedBy = l.completed_by as unknown as { full_name: string | null; email: string } | null;
+      const voidedBy = l.voided_by as unknown as { full_name: string | null; email: string } | null;
+      return {
+        id: l.id,
+        clientName: channel.client?.name ?? "Unknown",
+        channel: channel.channel,
+        completedByName: completedBy?.full_name || completedBy?.email || "Unknown",
+        completedAt: l.completed_at,
+        voidedAt: l.voided_at,
+        voidedByName: voidedBy?.full_name || voidedBy?.email || null,
+      };
+    });
+
   return (
     <div>
       <PageHeader title="Admin" description="Everything content-related lives here — invites, review queues, and full add/edit/delete for every section." />
-      <div className="space-y-10 p-8">
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-ink">Invite someone</h2>
-          <InviteForm />
-        </section>
+      <div className="p-8">
+        <AccordionGroup>
+          <AccordionItem id="invite" title="Invite someone">
+            <InviteForm />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-ink">Tools pending review ({pendingTools?.length ?? 0})</h2>
-          <ToolQueue tools={pendingTools ?? []} />
-        </section>
+          <AccordionItem id="tools-pending" title={`Tools pending review (${pendingTools?.length ?? 0})`}>
+            <ToolQueue tools={pendingTools ?? []} />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-ink">Published tools</h2>
-          <PublishedToolsList tools={publishedTools ?? []} />
-        </section>
+          <AccordionItem id="tools-published" title="Published tools">
+            <PublishedToolsList tools={publishedTools ?? []} />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-ink">Tips & prompts pending review ({pendingTips?.length ?? 0})</h2>
-          <TipQueue tips={pendingTips ?? []} />
-        </section>
+          <AccordionItem id="tips-pending" title={`Tips & prompts pending review (${pendingTips?.length ?? 0})`}>
+            <TipQueue tips={pendingTips ?? []} />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-ink">Published tips & prompts</h2>
-          <PublishedTipsList tips={publishedTips ?? []} />
-        </section>
+          <AccordionItem id="tips-published" title="Published tips & prompts">
+            <PublishedTipsList tips={publishedTips ?? []} />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-ink">Could this be AI&rsquo;d? inbox</h2>
-          <RequestsInbox requests={aiRequests ?? []} />
-        </section>
+          <AccordionItem id="ai-requests" title="Could this be AI'd? inbox">
+            <RequestsInbox requests={aiRequests ?? []} />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-ink">Support tickets</h2>
-          <TicketsInbox tickets={tickets ?? []} />
-        </section>
+          <AccordionItem id="tickets" title="Support tickets">
+            <TicketsInbox tickets={tickets ?? []} />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-4 text-sm font-bold text-ink">Agency — policies & resources</h2>
-          <div className="mb-4">
-            <AddResourceForm section="policy" label="+ Add policy / resource" />
-          </div>
-          <ResourceList items={policies ?? []} />
-        </section>
+          <AccordionItem id="agency-policies" title="Agency — policies & resources">
+            <div className="mb-4">
+              <AddResourceForm section="policy" label="+ Add policy / resource" />
+            </div>
+            <ResourceList items={policies ?? []} />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-4 text-sm font-bold text-ink">Agency — FAQs</h2>
-          <div className="mb-4">
-            <AddResourceForm section="faq" label="+ Add FAQ" showBody />
-          </div>
-          <ResourceList items={faqs ?? []} showBody />
-        </section>
+          <AccordionItem id="agency-faqs" title="Agency — FAQs">
+            <div className="mb-4">
+              <AddResourceForm section="faq" label="+ Add FAQ" showBody />
+            </div>
+            <ResourceList items={faqs ?? []} showBody />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-4 text-sm font-bold text-ink">Learning — paths</h2>
-          <div className="mb-4">
-            <AddResourceForm section="learning_path" label="+ Add path" showDuration />
-          </div>
-          <ResourceList items={learningPaths ?? []} showDuration />
-        </section>
+          <AccordionItem id="learning-paths" title="Learning — paths">
+            <div className="mb-4">
+              <AddResourceForm section="learning_path" label="+ Add path" showDuration />
+            </div>
+            <ResourceList items={learningPaths ?? []} showDuration />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-4 text-sm font-bold text-ink">Learning — training videos</h2>
-          <div className="mb-4">
-            <AddResourceForm section="loom" label="+ Add video" showDuration />
-          </div>
-          <ResourceList items={loomVideos ?? []} showDuration />
-        </section>
+          <AccordionItem id="learning-videos" title="Learning — training videos">
+            <div className="mb-4">
+              <AddResourceForm section="loom" label="+ Add video" showDuration />
+            </div>
+            <ResourceList items={loomVideos ?? []} showDuration />
+          </AccordionItem>
 
-        <section id="atl-manager">
-          <h2 className="mb-4 text-sm font-bold text-ink">ATL — clients & links</h2>
-          <AtlManager clients={clients ?? []} links={atlLinks ?? []} />
-        </section>
+          <AccordionItem id="atl-manager" title="ATL — clients & links">
+            <AtlManager clients={clients ?? []} links={atlLinks ?? []} />
+          </AccordionItem>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-ink">People & access</h2>
-          <PeopleTable people={people} />
-        </section>
+          <AccordionItem id="digital-clients" title="Digital — clients & channels">
+            <DigitalClientsManager
+              clients={digitalClients ?? []}
+              channels={digitalChannels ?? []}
+              leads={leadOptions}
+            />
+          </AccordionItem>
+
+          <AccordionItem id="digital-opti-log" title="Digital — optimisation log">
+            <DigitalOptiLogViewer logs={optiLogs} />
+          </AccordionItem>
+
+          <AccordionItem id="people" title="People & access">
+            <PeopleTable people={people} />
+          </AccordionItem>
+        </AccordionGroup>
       </div>
     </div>
   );

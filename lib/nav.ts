@@ -7,6 +7,7 @@ import {
   LifeBuoy,
   Settings,
   Sparkles,
+  Target,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -25,6 +26,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/could-this-be-aid", label: "Could this be AI'd?", icon: Lightbulb },
   { href: "/tips", label: "Tips & Prompts", icon: Sparkles },
   { href: "/atl", label: "ATL", icon: BarChart3, section: "atl" },
+  { href: "/digital-opti", label: "Digital Opti Tracking", icon: Target, section: "digital_opti" },
   { href: "/agency", label: "Agency", icon: Building2 },
   { href: "/learning", label: "Learning", icon: GraduationCap },
   { href: "/support", label: "Support", icon: LifeBuoy },
