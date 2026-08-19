@@ -27,7 +27,7 @@ export default async function DigitalOptiPage() {
     supabase
       .from("clients")
       .select(
-        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, lead:profiles!clients_account_lead_id_fkey(full_name, email), tier:client_tiers(id, name, colour)",
+        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, lead:profiles!clients_account_lead_id_fkey(full_name, email), tier:client_tiers(id, name, colour, sort_order)",
       )
       .eq("on_digital", true)
       .neq("digital_status", "archived")
@@ -41,7 +41,7 @@ export default async function DigitalOptiPage() {
       .select("id, client_channel_id, completed_at, voided_at")
       .gte("completed_at", lookbackIso),
     supabase.from("digital_opti_settings").select("schedule_label").eq("id", 1).single(),
-    supabase.from("client_tiers").select("id, name, colour").order("sort_order"),
+    supabase.from("client_tiers").select("id, name, colour, sort_order").order("sort_order"),
   ]);
 
   if (clientsError) console.error("[digital-opti] clients query failed:", clientsError);
@@ -50,7 +50,8 @@ export default async function DigitalOptiPage() {
 
   const clientInputs = (clients ?? []).map((client) => {
     const lead = client.lead as unknown as { full_name: string | null; email: string } | null;
-    const tier = client.tier as unknown as { id: number; name: string; colour: string } | null;
+    const rawTier = client.tier as unknown as { id: number; name: string; colour: string; sort_order: number } | null;
+    const tier = rawTier ? { id: rawTier.id, name: rawTier.name, colour: rawTier.colour, sortOrder: rawTier.sort_order } : null;
     return {
       id: client.id,
       name: client.name,
@@ -65,6 +66,7 @@ export default async function DigitalOptiPage() {
   });
 
   const board = buildDigitalOptiBoardData(clientInputs, channels ?? [], logs ?? [], now);
+  const tierOptions = (tiers ?? []).map((t) => ({ id: t.id, name: t.name, colour: t.colour, sortOrder: t.sort_order }));
 
   return (
     <div>
@@ -81,7 +83,7 @@ export default async function DigitalOptiPage() {
         teamSplit={board.teamSplit}
         scheduleLabel={settings?.schedule_label ?? null}
         isAdmin={visibility.isAdmin}
-        tiers={tiers ?? []}
+        tiers={tierOptions}
       />
     </div>
   );
