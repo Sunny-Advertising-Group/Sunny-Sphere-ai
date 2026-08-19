@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Pencil } from "lucide-react";
+import { ExternalLink, Pencil } from "lucide-react";
 import { Button, Card, EmptyState, Input } from "@/components/ui";
 import {
   cadenceLabel,
@@ -212,17 +212,17 @@ export function DigitalOptiBoard({
                       className="h-3 w-3 flex-none rounded-full"
                       style={{ background: client.colour || "#FDB600" }}
                     />
-                    {client.wipDocUrl ? (
+                    <span className="font-semibold text-ink">{client.name}</span>
+                    {client.wipDocUrl && (
                       <a
                         href={client.wipDocUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-semibold text-ink hover:text-gold"
+                        className="inline-flex items-center gap-1 rounded-full border border-border-c bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-charcoal hover:border-gold/50 hover:text-gold"
                       >
-                        {client.name}
+                        WIP
+                        <ExternalLink className="h-3 w-3" strokeWidth={2} aria-hidden />
                       </a>
-                    ) : (
-                      <span className="font-semibold text-ink">{client.name}</span>
                     )}
                     {client.tier && (
                       <span
