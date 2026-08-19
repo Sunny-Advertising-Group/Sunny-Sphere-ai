@@ -53,8 +53,11 @@ export type ClientRow = {
   retainer: number | null;
   digital_status: string | null;
   digital_cadence: string | null;
+  digital_tier_id: number | null;
   account_lead_id: string | null;
 };
+
+export type TierOption = { id: number; name: string; colour: string };
 
 export type LinkRow = {
   id: number;
@@ -75,6 +78,7 @@ export function ClientsManager({
   atlAssigneesByClient,
   digitalAssigneesByClient,
   people,
+  tiers,
 }: {
   clients: ClientRow[];
   links: LinkRow[];
@@ -82,6 +86,7 @@ export function ClientsManager({
   atlAssigneesByClient: Record<number, string[]>;
   digitalAssigneesByClient: Record<number, string[]>;
   people: PersonOption[];
+  tiers: TierOption[];
 }) {
   const [clientRows, setClientRows] = useState(clients);
   const [linkRows, setLinkRows] = useState(links);
@@ -157,7 +162,7 @@ export function ClientsManager({
 
   return (
     <div className="space-y-6">
-      <AddClientForm onAdded={(c) => setClientRows((prev) => [...prev, c])} />
+      <AddClientForm tiers={tiers} onAdded={(c) => setClientRows((prev) => [...prev, c])} />
 
       {clientRows.length === 0 ? (
         <EmptyState title="No clients yet" />
@@ -168,6 +173,7 @@ export function ClientsManager({
               key={client.id}
               client={client}
               people={people}
+              tiers={tiers}
               onSaved={(updated) => {
                 setClientRows((prev) => prev.map((c) => (c.id === client.id ? { ...c, ...updated } : c)));
                 setEditingClientId(null);
@@ -187,6 +193,14 @@ export function ClientsManager({
                   {client.on_digital && (
                     <span className="rounded-full border border-border-c px-2 py-0.5 text-[11px] font-semibold text-charcoal">
                       Digital
+                    </span>
+                  )}
+                  {client.digital_tier_id && (
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
+                      style={{ background: tiers.find((t) => t.id === client.digital_tier_id)?.colour ?? "#999" }}
+                    >
+                      {tiers.find((t) => t.id === client.digital_tier_id)?.name ?? "Tier"}
                     </span>
                   )}
                   {!client.is_active && <span className="text-xs text-charcoal">(inactive)</span>}
@@ -286,10 +300,12 @@ export function ClientsManager({
 
 function ClientFieldset({
   people,
+  tiers,
   values,
   onChange,
 }: {
   people: PersonOption[];
+  tiers: TierOption[];
   values: ClientRow;
   onChange: (updater: (v: ClientRow) => ClientRow) => void;
 }) {
@@ -367,10 +383,23 @@ function ClientFieldset({
       <input type="hidden" name="retainer" value={values.retainer ?? ""} />
       <input type="hidden" name="digital_status" value={values.digital_status ?? "active"} />
       <input type="hidden" name="digital_cadence" value={values.digital_cadence ?? "weekly"} />
+      <input type="hidden" name="digital_tier_id" value={values.digital_tier_id ?? ""} />
       <input type="hidden" name="account_lead_id" value={values.account_lead_id ?? ""} />
 
       {values.on_digital && (
         <>
+          <Select
+            defaultValue={values.digital_tier_id ?? ""}
+            className="w-32"
+            onChange={(e) => onChange((v) => ({ ...v, digital_tier_id: e.target.value ? Number(e.target.value) : null }))}
+          >
+            <option value="">Tier: none</option>
+            {tiers.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
           <Input
             type="number"
             step="0.01"
@@ -419,7 +448,7 @@ function ClientFieldset({
   );
 }
 
-function AddClientForm({ onAdded }: { onAdded: (c: ClientRow) => void }) {
+function AddClientForm({ tiers, onAdded }: { tiers: TierOption[]; onAdded: (c: ClientRow) => void }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -436,6 +465,7 @@ function AddClientForm({ onAdded }: { onAdded: (c: ClientRow) => void }) {
     retainer: null,
     digital_status: "active",
     digital_cadence: "weekly",
+    digital_tier_id: null,
     account_lead_id: null,
   });
 
@@ -467,7 +497,7 @@ function AddClientForm({ onAdded }: { onAdded: (c: ClientRow) => void }) {
       action={handleSubmit}
       className="flex flex-wrap items-end gap-2 rounded-xl border border-border-c bg-white p-4"
     >
-      <ClientFieldset people={[]} values={values} onChange={(updater) => setValues(updater)} />
+      <ClientFieldset people={[]} tiers={tiers} values={values} onChange={(updater) => setValues(updater)} />
       <Button type="submit" disabled={pending}>
         {pending ? "Adding…" : "Add"}
       </Button>
@@ -482,11 +512,13 @@ function AddClientForm({ onAdded }: { onAdded: (c: ClientRow) => void }) {
 function EditClientForm({
   client,
   people,
+  tiers,
   onSaved,
   onCancel,
 }: {
   client: ClientRow;
   people: PersonOption[];
+  tiers: TierOption[];
   onSaved: (updated: Partial<ClientRow>) => void;
   onCancel: () => void;
 }) {
@@ -507,7 +539,7 @@ function EditClientForm({
     <Card>
       <form action={handleSubmit} className="flex flex-wrap items-end gap-2">
         <input type="hidden" name="id" value={client.id} />
-        <ClientFieldset people={people} values={values} onChange={(updater) => setValues(updater)} />
+        <ClientFieldset people={people} tiers={tiers} values={values} onChange={(updater) => setValues(updater)} />
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save"}
         </Button>
