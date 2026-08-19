@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import {
   addAtlLink,
   addClient,
@@ -94,7 +94,15 @@ export function ClientsManager({
   const [atlAssignments, setAtlAssignments] = useState(atlAssigneesByClient);
   const [digitalAssignments, setDigitalAssignments] = useState(digitalAssigneesByClient);
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
+  const [tierFilter, setTierFilter] = useState<number | "all">("all");
   const [, startTransition] = useTransition();
+
+  const usedTiers = useMemo(
+    () => tiers.filter((t) => clientRows.some((c) => c.digital_tier_id === t.id)),
+    [tiers, clientRows],
+  );
+  const filteredRows =
+    tierFilter === "all" ? clientRows : clientRows.filter((c) => c.digital_tier_id === tierFilter);
 
   function removeClient(id: number) {
     if (!confirm("Delete this client entirely — ATL and Digital alike? This can't be undone.")) return;
@@ -167,8 +175,37 @@ export function ClientsManager({
       {clientRows.length === 0 ? (
         <EmptyState title="No clients yet" />
       ) : (
-        clientRows.map((client) =>
-          editingClientId === client.id ? (
+        <>
+          {usedTiers.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setTierFilter("all")}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  tierFilter === "all" ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
+                }`}
+              >
+                All tiers
+              </button>
+              {usedTiers.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTierFilter(t.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    tierFilter === t.id ? "text-white" : "text-charcoal hover:border-gold/50"
+                  }`}
+                  style={
+                    tierFilter === t.id
+                      ? { background: t.colour, borderColor: t.colour }
+                      : { borderColor: "var(--border-c)" }
+                  }
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {filteredRows.map((client) =>
+            editingClientId === client.id ? (
             <EditClientForm
               key={client.id}
               client={client}
@@ -292,7 +329,8 @@ export function ClientsManager({
               )}
             </Card>
           ),
-        )
+        )}
+        </>
       )}
     </div>
   );
