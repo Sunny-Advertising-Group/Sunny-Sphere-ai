@@ -17,27 +17,36 @@ export default async function DigitalOptiPage() {
   const now = currentInstant();
   const lookbackIso = lookbackIsoDate(LOG_LOOKBACK_DAYS, now);
 
-  const [{ data: clients }, { data: channels }, { data: logs }, { data: settings }, { data: tiers }] =
-    await Promise.all([
-      supabase
-        .from("clients")
-        .select(
-          "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, lead:profiles(full_name, email), tier:client_tiers(id, name, colour)",
-        )
-        .eq("on_digital", true)
-        .neq("digital_status", "archived")
-        .order("name"),
-      supabase
-        .from("digital_client_channels")
-        .select("id, client_id, channel, is_active")
-        .eq("is_active", true),
-      supabase
-        .from("digital_opti_logs")
-        .select("id, client_channel_id, completed_at, voided_at")
-        .gte("completed_at", lookbackIso),
-      supabase.from("digital_opti_settings").select("schedule_label").eq("id", 1).single(),
-      supabase.from("client_tiers").select("id, name, colour").order("sort_order"),
-    ]);
+  const [
+    { data: clients, error: clientsError },
+    { data: channels, error: channelsError },
+    { data: logs, error: logsError },
+    { data: settings },
+    { data: tiers },
+  ] = await Promise.all([
+    supabase
+      .from("clients")
+      .select(
+        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, lead:profiles(full_name, email), tier:client_tiers(id, name, colour)",
+      )
+      .eq("on_digital", true)
+      .neq("digital_status", "archived")
+      .order("name"),
+    supabase
+      .from("digital_client_channels")
+      .select("id, client_id, channel, is_active")
+      .eq("is_active", true),
+    supabase
+      .from("digital_opti_logs")
+      .select("id, client_channel_id, completed_at, voided_at")
+      .gte("completed_at", lookbackIso),
+    supabase.from("digital_opti_settings").select("schedule_label").eq("id", 1).single(),
+    supabase.from("client_tiers").select("id, name, colour").order("sort_order"),
+  ]);
+
+  if (clientsError) console.error("[digital-opti] clients query failed:", clientsError);
+  if (channelsError) console.error("[digital-opti] channels query failed:", channelsError);
+  if (logsError) console.error("[digital-opti] logs query failed:", logsError);
 
   const clientInputs = (clients ?? []).map((client) => {
     const lead = client.lead as unknown as { full_name: string | null; email: string } | null;
