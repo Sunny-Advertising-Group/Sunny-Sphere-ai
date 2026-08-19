@@ -79,6 +79,22 @@ export function currentWeekCommencing(at: Date = new Date()): Date {
   return periodStart("weekly", at);
 }
 
+// End of the cadence period `at` currently falls in — a channel's due-by
+// date, whether or not it's already been logged this period (if logged,
+// this is simply when it next resets and needs doing again).
+export function periodEnd(cadence: string, at: Date = new Date()): Date {
+  if (cadence === "monthly") {
+    const start = periodStart(cadence, at);
+    return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+  }
+  if (cadence === "quarterly") {
+    const start = periodStart(cadence, at);
+    return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 3, 1));
+  }
+  const spanMs = cadence === "fortnightly" ? WEEK_MS * 2 : WEEK_MS;
+  return new Date(periodStart(cadence, at).getTime() + spanMs);
+}
+
 export type OptiLog = { completed_at: string; voided_at: string | null };
 
 export function isLoggedForCurrentPeriod(
@@ -110,7 +126,7 @@ export function lookbackIsoDate(days: number, now: Date): string {
 
 export type RawOptiLog = { client_channel_id: number; completed_at: string; voided_at: string | null };
 
-export type ChannelInput = { id: number; client_id: number; channel: string; cadence: string };
+export type ChannelInput = { id: number; client_id: number; channel: string };
 
 export type ClientInput = {
   id: number;
@@ -120,12 +136,15 @@ export type ClientInput = {
   wipDocUrl: string | null;
   status: string;
   leadName: string | null;
+  // Cadence is set once per client — every active channel on that client
+  // shares the same optimisation schedule, rather than each channel having
+  // its own.
+  cadence: string;
 };
 
 export type ClientChannelCard = {
   id: number;
   channel: string;
-  cadence: string;
   done: boolean;
   lastLoggedAt: string | null;
 };
@@ -177,12 +196,12 @@ export function buildDigitalOptiBoardData(
       .sort((a, b) => CHANNEL_ORDER.indexOf(a.channel) - CHANNEL_ORDER.indexOf(b.channel))
       .map((ch) => {
         const chLogs = logsByChannel.get(ch.id) ?? [];
-        const done = isLoggedForCurrentPeriod(ch.cadence, chLogs, now);
+        const done = isLoggedForCurrentPeriod(client.cadence, chLogs, now);
         const lastLogged = lastLoggedAt(chLogs);
         totalActive += 1;
         if (done) totalDone += 1;
         if (lastLogged && (!lastUpdatedAt || lastLogged > lastUpdatedAt)) lastUpdatedAt = lastLogged;
-        return { id: ch.id, channel: ch.channel, cadence: ch.cadence, done, lastLoggedAt: lastLogged };
+        return { id: ch.id, channel: ch.channel, done, lastLoggedAt: lastLogged };
       });
     return { ...client, channels: chans };
   });

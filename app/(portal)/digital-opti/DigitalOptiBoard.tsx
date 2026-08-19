@@ -183,9 +183,12 @@ export function DigitalOptiBoard({
                     {status.label}
                   </span>
                 </div>
-                <div className="mt-1 text-xs text-charcoal">
-                  {client.leadName ?? "Unassigned"}
-                  {client.retainer != null && ` · ${currency.format(client.retainer)}`}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-charcoal">
+                  <span>{client.leadName ?? "Unassigned"}</span>
+                  {client.retainer != null && <span>· {currency.format(client.retainer)}</span>}
+                  <span className="rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-charcoal">
+                    {cadenceLabel(client.cadence)}
+                  </span>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -195,25 +198,20 @@ export function DigitalOptiBoard({
                       type="button"
                       disabled={ch.done}
                       onClick={() => tick(client.id, ch.id)}
-                      className={`flex flex-col items-start gap-1 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left text-xs font-semibold text-ink transition-colors ${
                         ch.done
                           ? "border-emerald-200 bg-emerald-50"
                           : "border-border-c bg-white hover:border-gold/50"
                       }`}
                     >
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-ink">
-                        <span
-                          className={`flex h-4 w-4 flex-none items-center justify-center rounded border ${
-                            ch.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
-                          }`}
-                        >
-                          {ch.done && "✓"}
-                        </span>
-                        {channelLabel(ch.channel)}
+                      <span
+                        className={`flex h-4 w-4 flex-none items-center justify-center rounded border ${
+                          ch.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
+                        }`}
+                      >
+                        {ch.done && "✓"}
                       </span>
-                      <span className="text-[10px] uppercase tracking-wide text-charcoal">
-                        {cadenceLabel(ch.cadence)}
-                      </span>
+                      {channelLabel(ch.channel)}
                     </button>
                   ))}
                 </div>

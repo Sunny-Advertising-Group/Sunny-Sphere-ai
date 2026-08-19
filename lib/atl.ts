@@ -96,6 +96,16 @@ export function cadenceLabel(cadence: string | null): string {
   return CADENCE_OPTIONS.find((c) => c.value === cadence)?.label ?? "Not set";
 }
 
+// The date a link should be refreshed by — reuses the same dueSoonDays
+// threshold that flips a link's status from "current" to "due_soon", so
+// there's a single canonical due date rather than a separate tunable.
+export function nextDueDate(cadence: string | null, driveModifiedAt: string | null): Date | null {
+  if (!cadence || cadence === "none" || !driveModifiedAt) return null;
+  const preset = CADENCE_OPTIONS.find((c) => c.value === cadence);
+  if (!preset || preset.dueSoonDays === null) return null;
+  return new Date(new Date(driveModifiedAt).getTime() + preset.dueSoonDays * 86_400_000);
+}
+
 export type HousekeepingStatus = "current" | "due_soon" | "overdue" | "not_tracked" | "awaiting_sync";
 
 export function housekeepingStatus(

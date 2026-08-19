@@ -16,6 +16,7 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
     .from("clients")
     .select("id, name, colour, wip_doc_url, wip_cadence, is_active")
     .eq("name", clientName)
+    .eq("on_atl", true)
     .single();
 
   if (!client) notFound();

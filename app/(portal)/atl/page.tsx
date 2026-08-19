@@ -11,15 +11,16 @@ export default async function AtlPage() {
 
   const supabase = await createClient();
   const [{ data: clients }, { data: rawLinks }] = await Promise.all([
-    supabase.from("clients").select("id, name, colour, team, is_active").order("name"),
+    supabase.from("clients").select("id, name, colour, team, is_active").eq("on_atl", true).order("name"),
     supabase
       .from("atl_links")
       .select("id, kind, title, url, version_label, client:clients(name, colour)")
       .order("sort_order"),
   ]);
 
+  const onAtlNames = new Set((clients ?? []).map((c) => c.name));
   const links: LinkRow[] = (rawLinks ?? [])
-    .filter((l) => l.client)
+    .filter((l) => l.client && onAtlNames.has((l.client as unknown as { name: string }).name))
     .map((l) => ({
       id: l.id,
       kind: l.kind,
@@ -38,7 +39,7 @@ export default async function AtlPage() {
         action={
           visibility.isAdmin ? (
             <Link
-              href="/admin#atl-manager"
+              href="/admin?section=clients"
               className="rounded-full border border-gold bg-gold px-3 py-1.5 text-xs font-semibold text-ink hover:bg-gold/90"
             >
               Manage clients & links

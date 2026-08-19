@@ -1,8 +1,25 @@
+import {
+  Building2,
+  CheckCircle2,
+  ClipboardList,
+  FileText,
+  GraduationCap,
+  HelpCircle,
+  Lightbulb,
+  LifeBuoy,
+  MessageSquareText,
+  Sparkles,
+  UserPlus,
+  Users,
+  Video,
+  Wrench,
+} from "lucide-react";
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui";
-import { AccordionGroup, AccordionItem } from "@/components/Accordion";
+import { SectionCardGrid, type SectionCardDef } from "@/components/SectionCardGrid";
+import type { PersonOption } from "@/components/AssigneePicker";
 import { AddResourceForm } from "@/components/AddResourceForm";
 import { InviteForm } from "./InviteForm";
 import { ToolQueue } from "./ToolQueue";
@@ -13,13 +30,17 @@ import { RequestsInbox } from "./RequestsInbox";
 import { TicketsInbox } from "./TicketsInbox";
 import { PeopleTable, type Person } from "./PeopleTable";
 import { ResourceList } from "./ResourceList";
-import { AtlManager } from "./AtlManager";
-import { DigitalClientsManager, type LeadOption } from "./DigitalClientsManager";
+import { ClientsManager } from "./ClientsManager";
 import { DigitalOptiLogViewer, type OptiLogRow } from "./DigitalOptiLogViewer";
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ section?: string }>;
+}) {
   const visibility = await getVisibility();
   if (!visibility || !visibility.isAdmin) redirect("/");
+  const { section } = await searchParams;
 
   const supabase = await createClient();
 
@@ -38,8 +59,9 @@ export default async function AdminPage() {
     { data: loomVideos },
     { data: clients },
     { data: atlLinks },
-    { data: digitalClients },
+    { data: atlAssignees },
     { data: digitalChannels },
+    { data: digitalAssignees },
     { data: rawOptiLogs },
   ] = await Promise.all([
     supabase
@@ -79,19 +101,20 @@ export default async function AdminPage() {
     supabase.from("resources").select("*").eq("section", "faq").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "learning_path").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "loom").order("sort_order"),
-    supabase.from("clients").select("id, name, colour, team, is_active").order("name"),
-    supabase.from("atl_links").select("id, client_id, kind, title, url, version_label, cadence").order("sort_order"),
     supabase
-      .from("digital_clients")
-      .select("id, name, colour, lead_id, retainer, wip_doc_url, status")
+      .from("clients")
+      .select(
+        "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, digital_status, digital_cadence, account_lead_id",
+      )
       .order("name"),
-    supabase
-      .from("digital_client_channels")
-      .select("id, client_id, channel, cadence, is_active"),
+    supabase.from("atl_links").select("id, client_id, kind, title, url, version_label, cadence").order("sort_order"),
+    supabase.from("atl_client_assignees").select("client_id, profile_id"),
+    supabase.from("digital_client_channels").select("id, client_id, channel, is_active"),
+    supabase.from("digital_client_assignees").select("client_id, profile_id"),
     supabase
       .from("digital_opti_logs")
       .select(
-        "id, completed_at, voided_at, completed_by:profiles!digital_opti_logs_completed_by_fkey(full_name, email), voided_by:profiles!digital_opti_logs_voided_by_fkey(full_name, email), channel:digital_client_channels(channel, client:digital_clients(name))",
+        "id, completed_at, voided_at, completed_by:profiles!digital_opti_logs_completed_by_fkey(full_name, email), voided_by:profiles!digital_opti_logs_voided_by_fkey(full_name, email), channel:digital_client_channels(channel, client:clients(name))",
       )
       .order("completed_at", { ascending: false })
       .limit(200),
@@ -113,10 +136,20 @@ export default async function AdminPage() {
     grantedSections: grantsByUser.get(p.id) ?? [],
   }));
 
-  const leadOptions: LeadOption[] = (profiles ?? []).map((p) => ({
+  const personOptions: PersonOption[] = (profiles ?? []).map((p) => ({
     id: p.id,
     label: p.full_name || p.email,
   }));
+
+  function groupAssignees(rows: { client_id: number; profile_id: string }[] | null): Record<number, string[]> {
+    const map: Record<number, string[]> = {};
+    for (const row of rows ?? []) {
+      map[row.client_id] = [...(map[row.client_id] ?? []), row.profile_id];
+    }
+    return map;
+  }
+  const atlAssigneesByClient = groupAssignees(atlAssignees);
+  const digitalAssigneesByClient = groupAssignees(digitalAssignees);
 
   const optiLogs: OptiLogRow[] = (rawOptiLogs ?? [])
     .filter((l) => l.channel)
@@ -135,87 +168,137 @@ export default async function AdminPage() {
       };
     });
 
+  const sections: SectionCardDef[] = [
+    {
+      id: "invite",
+      title: "Invite someone",
+      icon: UserPlus,
+      content: <InviteForm />,
+    },
+    {
+      id: "tools-pending",
+      title: "Tools pending review",
+      icon: Wrench,
+      badge: pendingTools?.length ?? 0,
+      content: <ToolQueue tools={pendingTools ?? []} />,
+    },
+    {
+      id: "tools-published",
+      title: "Published tools",
+      icon: CheckCircle2,
+      content: <PublishedToolsList tools={publishedTools ?? []} />,
+    },
+    {
+      id: "tips-pending",
+      title: "Tips & prompts pending review",
+      icon: Sparkles,
+      badge: pendingTips?.length ?? 0,
+      content: <TipQueue tips={pendingTips ?? []} />,
+    },
+    {
+      id: "tips-published",
+      title: "Published tips & prompts",
+      icon: MessageSquareText,
+      content: <PublishedTipsList tips={publishedTips ?? []} />,
+    },
+    {
+      id: "ai-requests",
+      title: "Could this be AI'd? inbox",
+      icon: Lightbulb,
+      content: <RequestsInbox requests={aiRequests ?? []} />,
+    },
+    {
+      id: "tickets",
+      title: "Support tickets",
+      icon: LifeBuoy,
+      content: <TicketsInbox tickets={tickets ?? []} />,
+    },
+    {
+      id: "agency-policies",
+      title: "Agency — policies & resources",
+      icon: FileText,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="policy" label="+ Add policy / resource" />
+          </div>
+          <ResourceList items={policies ?? []} />
+        </>
+      ),
+    },
+    {
+      id: "agency-faqs",
+      title: "Agency — FAQs",
+      icon: HelpCircle,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="faq" label="+ Add FAQ" showBody />
+          </div>
+          <ResourceList items={faqs ?? []} showBody />
+        </>
+      ),
+    },
+    {
+      id: "learning-paths",
+      title: "Learning — paths",
+      icon: GraduationCap,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="learning_path" label="+ Add path" showDuration />
+          </div>
+          <ResourceList items={learningPaths ?? []} showDuration />
+        </>
+      ),
+    },
+    {
+      id: "learning-videos",
+      title: "Learning — training videos",
+      icon: Video,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="loom" label="+ Add video" showDuration />
+          </div>
+          <ResourceList items={loomVideos ?? []} showDuration />
+        </>
+      ),
+    },
+    {
+      id: "clients",
+      title: "Clients — ATL & Digital",
+      icon: Building2,
+      content: (
+        <ClientsManager
+          clients={clients ?? []}
+          links={atlLinks ?? []}
+          channels={digitalChannels ?? []}
+          atlAssigneesByClient={atlAssigneesByClient}
+          digitalAssigneesByClient={digitalAssigneesByClient}
+          people={personOptions}
+        />
+      ),
+    },
+    {
+      id: "digital-opti-log",
+      title: "Digital — optimisation log",
+      icon: ClipboardList,
+      content: <DigitalOptiLogViewer logs={optiLogs} />,
+    },
+    {
+      id: "people",
+      title: "People & access",
+      icon: Users,
+      content: <PeopleTable people={people} />,
+    },
+  ];
+
   return (
     <div>
       <PageHeader title="Admin" description="Everything content-related lives here — invites, review queues, and full add/edit/delete for every section." />
       <div className="p-8">
-        <AccordionGroup>
-          <AccordionItem id="invite" title="Invite someone">
-            <InviteForm />
-          </AccordionItem>
-
-          <AccordionItem id="tools-pending" title={`Tools pending review (${pendingTools?.length ?? 0})`}>
-            <ToolQueue tools={pendingTools ?? []} />
-          </AccordionItem>
-
-          <AccordionItem id="tools-published" title="Published tools">
-            <PublishedToolsList tools={publishedTools ?? []} />
-          </AccordionItem>
-
-          <AccordionItem id="tips-pending" title={`Tips & prompts pending review (${pendingTips?.length ?? 0})`}>
-            <TipQueue tips={pendingTips ?? []} />
-          </AccordionItem>
-
-          <AccordionItem id="tips-published" title="Published tips & prompts">
-            <PublishedTipsList tips={publishedTips ?? []} />
-          </AccordionItem>
-
-          <AccordionItem id="ai-requests" title="Could this be AI'd? inbox">
-            <RequestsInbox requests={aiRequests ?? []} />
-          </AccordionItem>
-
-          <AccordionItem id="tickets" title="Support tickets">
-            <TicketsInbox tickets={tickets ?? []} />
-          </AccordionItem>
-
-          <AccordionItem id="agency-policies" title="Agency — policies & resources">
-            <div className="mb-4">
-              <AddResourceForm section="policy" label="+ Add policy / resource" />
-            </div>
-            <ResourceList items={policies ?? []} />
-          </AccordionItem>
-
-          <AccordionItem id="agency-faqs" title="Agency — FAQs">
-            <div className="mb-4">
-              <AddResourceForm section="faq" label="+ Add FAQ" showBody />
-            </div>
-            <ResourceList items={faqs ?? []} showBody />
-          </AccordionItem>
-
-          <AccordionItem id="learning-paths" title="Learning — paths">
-            <div className="mb-4">
-              <AddResourceForm section="learning_path" label="+ Add path" showDuration />
-            </div>
-            <ResourceList items={learningPaths ?? []} showDuration />
-          </AccordionItem>
-
-          <AccordionItem id="learning-videos" title="Learning — training videos">
-            <div className="mb-4">
-              <AddResourceForm section="loom" label="+ Add video" showDuration />
-            </div>
-            <ResourceList items={loomVideos ?? []} showDuration />
-          </AccordionItem>
-
-          <AccordionItem id="atl-manager" title="ATL — clients & links">
-            <AtlManager clients={clients ?? []} links={atlLinks ?? []} />
-          </AccordionItem>
-
-          <AccordionItem id="digital-clients" title="Digital — clients & channels">
-            <DigitalClientsManager
-              clients={digitalClients ?? []}
-              channels={digitalChannels ?? []}
-              leads={leadOptions}
-            />
-          </AccordionItem>
-
-          <AccordionItem id="digital-opti-log" title="Digital — optimisation log">
-            <DigitalOptiLogViewer logs={optiLogs} />
-          </AccordionItem>
-
-          <AccordionItem id="people" title="People & access">
-            <PeopleTable people={people} />
-          </AccordionItem>
-        </AccordionGroup>
+        <SectionCardGrid sections={sections} initialSectionId={section ?? null} />
       </div>
     </div>
   );
