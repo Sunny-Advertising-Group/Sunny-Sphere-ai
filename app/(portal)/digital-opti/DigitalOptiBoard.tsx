@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Pencil } from "lucide-react";
 import { Button, Card, EmptyState, Input } from "@/components/ui";
 import {
@@ -10,10 +10,17 @@ import {
   currentWeekCommencing,
   type ClientCardData,
   type TeamSplitRow,
+  type TierInfo,
 } from "@/lib/digitalOpti";
 import { logOpti, updateScheduleLabel } from "./actions";
 
 export type { ClientCardData, TeamSplitRow };
+
+// A low-alpha tint of the tier's colour, used as a card background band so
+// the tier reads at a glance without fighting the text for contrast.
+function tierTint(colour: string): string {
+  return `${colour}1A`;
+}
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -59,6 +66,7 @@ export function DigitalOptiBoard({
   teamSplit,
   scheduleLabel,
   isAdmin,
+  tiers,
 }: {
   clients: ClientCardData[];
   completionPct: number;
@@ -68,9 +76,18 @@ export function DigitalOptiBoard({
   teamSplit: TeamSplitRow[];
   scheduleLabel: string | null;
   isAdmin: boolean;
+  tiers: TierInfo[];
 }) {
   const [clientRows, setClientRows] = useState(clients);
+  const [tierFilter, setTierFilter] = useState<number | "all">("all");
   const [, startTransition] = useTransition();
+
+  const usedTiers = useMemo(
+    () => tiers.filter((t) => clientRows.some((c) => c.tier?.id === t.id)),
+    [tiers, clientRows],
+  );
+  const filteredRows =
+    tierFilter === "all" ? clientRows : clientRows.filter((c) => c.tier?.id === tierFilter);
 
   function tick(clientId: number, channelId: number) {
     setClientRows((prev) =>
@@ -155,11 +172,40 @@ export function DigitalOptiBoard({
       {clientRows.length === 0 ? (
         <EmptyState title="No Digital clients yet" description="Add a client and their channels from the Admin page." />
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {clientRows.map((client) => {
+        <>
+          {usedTiers.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setTierFilter("all")}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  tierFilter === "all" ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
+                }`}
+              >
+                All tiers
+              </button>
+              {usedTiers.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTierFilter(t.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    tierFilter === t.id ? "text-white" : "text-charcoal hover:border-gold/50"
+                  }`}
+                  style={
+                    tierFilter === t.id
+                      ? { background: t.colour, borderColor: t.colour }
+                      : { borderColor: "var(--border-c)" }
+                  }
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {filteredRows.map((client) => {
             const status = clientStatusMeta(client.status);
             return (
-              <Card key={client.id}>
+              <Card key={client.id} style={client.tier ? { background: tierTint(client.tier.colour) } : undefined}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span
@@ -177,6 +223,14 @@ export function DigitalOptiBoard({
                       </a>
                     ) : (
                       <span className="font-semibold text-ink">{client.name}</span>
+                    )}
+                    {client.tier && (
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                        style={{ background: client.tier.colour }}
+                      >
+                        {client.tier.name}
+                      </span>
                     )}
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${status.className}`}>
@@ -218,7 +272,8 @@ export function DigitalOptiBoard({
               </Card>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

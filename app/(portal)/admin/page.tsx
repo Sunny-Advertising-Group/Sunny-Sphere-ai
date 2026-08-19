@@ -63,6 +63,7 @@ export default async function AdminPage({
     { data: digitalChannels },
     { data: digitalAssignees },
     { data: rawOptiLogs },
+    { data: tiers },
   ] = await Promise.all([
     supabase
       .from("tools")
@@ -104,7 +105,7 @@ export default async function AdminPage({
     supabase
       .from("clients")
       .select(
-        "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, digital_status, digital_cadence, account_lead_id",
+        "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, digital_status, digital_cadence, digital_tier_id, account_lead_id",
       )
       .order("name"),
     supabase.from("atl_links").select("id, client_id, kind, title, url, version_label, cadence").order("sort_order"),
@@ -118,6 +119,7 @@ export default async function AdminPage({
       )
       .order("completed_at", { ascending: false })
       .limit(200),
+    supabase.from("client_tiers").select("id, name, colour").order("sort_order"),
   ]);
 
   const grantsByUser = new Map<string, string[]>();
@@ -277,6 +279,7 @@ export default async function AdminPage({
           atlAssigneesByClient={atlAssigneesByClient}
           digitalAssigneesByClient={digitalAssigneesByClient}
           people={personOptions}
+          tiers={tiers ?? []}
         />
       ),
     },

@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { ChevronLeft, Inbox, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export function Card({
   children,
   className = "",
+  style,
 }: {
   children: ReactNode;
   className?: string;
+  style?: CSSProperties;
 }) {
   return (
     <div
       className={`rounded-2xl border border-border-c bg-white p-5 ${className}`}
+      style={style}
     >
       {children}
     </div>

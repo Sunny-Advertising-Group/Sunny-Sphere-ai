@@ -128,6 +128,8 @@ export type RawOptiLog = { client_channel_id: number; completed_at: string; void
 
 export type ChannelInput = { id: number; client_id: number; channel: string };
 
+export type TierInfo = { id: number; name: string; colour: string };
+
 export type ClientInput = {
   id: number;
   name: string;
@@ -140,6 +142,7 @@ export type ClientInput = {
   // shares the same optimisation schedule, rather than each channel having
   // its own.
   cadence: string;
+  tier: TierInfo | null;
 };
 
 export type ClientChannelCard = {

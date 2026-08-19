@@ -8,13 +8,14 @@ import { createClient } from "@/lib/supabase/server";
 // (name, colour, WIP link) living once and each team's own fields (ATL: team/
 // is_active; Digital: retainer/status/cadence/lead) alongside them.
 const CLIENT_SELECT =
-  "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, digital_status, digital_cadence, account_lead_id";
+  "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, digital_status, digital_cadence, digital_tier_id, account_lead_id";
 
 function clientFieldsFromForm(formData: FormData) {
   const retainerRaw = String(formData.get("retainer") ?? "").trim();
   const digitalStatus = String(formData.get("digital_status") ?? "").trim();
   const digitalCadence = String(formData.get("digital_cadence") ?? "").trim();
   const accountLeadId = String(formData.get("account_lead_id") ?? "").trim();
+  const digitalTierIdRaw = String(formData.get("digital_tier_id") ?? "").trim();
   return {
     name: String(formData.get("name") ?? "").trim(),
     colour: String(formData.get("colour") ?? "").trim() || null,
@@ -25,6 +26,7 @@ function clientFieldsFromForm(formData: FormData) {
     retainer: retainerRaw ? Number(retainerRaw) : null,
     digital_status: digitalStatus || null,
     digital_cadence: digitalCadence || null,
+    digital_tier_id: digitalTierIdRaw ? Number(digitalTierIdRaw) : null,
     account_lead_id: accountLeadId || null,
   };
 }
