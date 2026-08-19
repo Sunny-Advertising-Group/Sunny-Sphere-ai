@@ -128,7 +128,7 @@ export type RawOptiLog = { client_channel_id: number; completed_at: string; void
 
 export type ChannelInput = { id: number; client_id: number; channel: string };
 
-export type TierInfo = { id: number; name: string; colour: string };
+export type TierInfo = { id: number; name: string; colour: string; sortOrder: number };
 
 export type ClientInput = {
   id: number;
@@ -207,6 +207,13 @@ export function buildDigitalOptiBoardData(
         return { id: ch.id, channel: ch.channel, done, lastLoggedAt: lastLogged };
       });
     return { ...client, channels: chans };
+  });
+
+  // Tiered hierarchy: untiered clients (sortOrder undefined) sort last,
+  // ties broken alphabetically by name.
+  clientCards.sort((a, b) => {
+    const tierDiff = (a.tier?.sortOrder ?? Infinity) - (b.tier?.sortOrder ?? Infinity);
+    return tierDiff !== 0 ? tierDiff : a.name.localeCompare(b.name);
   });
 
   const teamSplitMap = new Map<string, TeamSplitRow>();
