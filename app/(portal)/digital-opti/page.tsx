@@ -27,7 +27,7 @@ export default async function DigitalOptiPage() {
     supabase
       .from("clients")
       .select(
-        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, lead:profiles(full_name, email), tier:client_tiers(id, name, colour)",
+        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, lead:profiles!clients_account_lead_id_fkey(full_name, email), tier:client_tiers(id, name, colour)",
       )
       .eq("on_digital", true)
       .neq("digital_status", "archived")
