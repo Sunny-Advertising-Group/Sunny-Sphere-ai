@@ -147,6 +147,16 @@ export async function setClientChannelActive(id: number, isActive: boolean) {
   return { success: true };
 }
 
+export async function updateClientWipUrl(clientId: number, url: string | null) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("clients").update({ wip_doc_url: url }).eq("id", clientId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
 export async function deleteClientChannel(id: number) {
   const supabase = await createClient();
   const { error } = await supabase.from("digital_client_channels").delete().eq("id", id);
