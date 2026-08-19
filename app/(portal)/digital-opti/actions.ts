@@ -13,14 +13,17 @@ export async function logOpti(clientChannelId: number) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
+  // Cadence lives on the client now (shared across every channel it runs),
+  // not on the individual channel row.
   const { data: channel } = await supabase
     .from("digital_client_channels")
-    .select("cadence")
+    .select("client:clients(digital_cadence)")
     .eq("id", clientChannelId)
     .single();
-  if (!channel) return { error: "Channel not found." };
+  const cadence = (channel?.client as unknown as { digital_cadence: string } | null)?.digital_cadence;
+  if (!cadence) return { error: "Channel not found." };
 
-  const start = periodStart(channel.cadence).toISOString();
+  const start = periodStart(cadence).toISOString();
   const { data: existing } = await supabase
     .from("digital_opti_logs")
     .select("id")
@@ -88,104 +91,55 @@ export async function restoreOptiLog(logId: number) {
   return { success: true };
 }
 
-// --- Admin: clients ---
+// --- Admin: Digital-specific secondary assignees (the client's main "lead" is
+// a plain field on `clients`, edited via atl/actions.ts's updateClient) ---
 
-export async function addDigitalClient(_prevState: unknown, formData: FormData) {
+export async function addDigitalClientAssignee(clientId: number, profileId: string) {
   const supabase = await createClient();
-  const name = String(formData.get("name") ?? "").trim();
-  const colour = String(formData.get("colour") ?? "").trim();
-  const leadId = String(formData.get("lead_id") ?? "").trim();
-  const retainerRaw = String(formData.get("retainer") ?? "").trim();
-  const wipDocUrl = String(formData.get("wip_doc_url") ?? "").trim();
-  const status = String(formData.get("status") ?? "active").trim();
-  if (!name) return { error: "Client name is required." };
-
-  const { error } = await supabase.from("digital_clients").insert({
-    name,
-    colour: colour || null,
-    lead_id: leadId || null,
-    retainer: retainerRaw ? Number(retainerRaw) : null,
-    wip_doc_url: wipDocUrl || null,
-    status,
-  });
-  if (error) return { error: error.message };
-
-  revalidatePath("/digital-opti");
-  revalidatePath("/admin");
-  return { success: true };
-}
-
-export async function updateDigitalClient(_prevState: unknown, formData: FormData) {
-  const supabase = await createClient();
-  const id = Number(formData.get("id"));
-  const name = String(formData.get("name") ?? "").trim();
-  const colour = String(formData.get("colour") ?? "").trim();
-  const leadId = String(formData.get("lead_id") ?? "").trim();
-  const retainerRaw = String(formData.get("retainer") ?? "").trim();
-  const wipDocUrl = String(formData.get("wip_doc_url") ?? "").trim();
-  const status = String(formData.get("status") ?? "active").trim();
-  if (!id || !name) return { error: "Client name is required." };
-
   const { error } = await supabase
-    .from("digital_clients")
-    .update({
-      name,
-      colour: colour || null,
-      lead_id: leadId || null,
-      retainer: retainerRaw ? Number(retainerRaw) : null,
-      wip_doc_url: wipDocUrl || null,
-      status,
-    })
-    .eq("id", id);
+    .from("digital_client_assignees")
+    .insert({ client_id: clientId, profile_id: profileId });
   if (error) return { error: error.message };
 
-  revalidatePath("/digital-opti");
   revalidatePath("/admin");
+  revalidatePath("/");
   return { success: true };
 }
 
-export async function deleteDigitalClient(id: number) {
+export async function removeDigitalClientAssignee(clientId: number, profileId: string) {
   const supabase = await createClient();
-  const { error } = await supabase.from("digital_clients").delete().eq("id", id);
-  if (error) return { error: error.message };
-
-  revalidatePath("/digital-opti");
-  revalidatePath("/admin");
-  return { success: true };
-}
-
-// --- Admin: client channels ---
-
-export async function addClientChannel(_prevState: unknown, formData: FormData) {
-  const supabase = await createClient();
-  const clientId = Number(formData.get("client_id"));
-  const channel = String(formData.get("channel") ?? "").trim();
-  const cadence = String(formData.get("cadence") ?? "").trim();
-  if (!clientId || !channel || !cadence) return { error: "Channel and cadence are required." };
-
-  const { error } = await supabase.from("digital_client_channels").insert({
-    client_id: clientId,
-    channel,
-    cadence,
-  });
-  if (error) return { error: error.message };
-
-  revalidatePath("/digital-opti");
-  revalidatePath("/admin");
-  return { success: true };
-}
-
-export async function updateClientChannel(_prevState: unknown, formData: FormData) {
-  const supabase = await createClient();
-  const id = Number(formData.get("id"));
-  const cadence = String(formData.get("cadence") ?? "").trim();
-  const isActive = formData.get("is_active") === "true";
-  if (!id || !cadence) return { error: "Cadence is required." };
-
   const { error } = await supabase
+    .from("digital_client_assignees")
+    .delete()
+    .eq("client_id", clientId)
+    .eq("profile_id", profileId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  revalidatePath("/");
+  return { success: true };
+}
+
+// --- Admin: client channels (which channels a client runs — cadence is set
+// once on the client itself, not per channel) ---
+
+export async function addClientChannel(clientId: number, channel: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
     .from("digital_client_channels")
-    .update({ cadence, is_active: isActive })
-    .eq("id", id);
+    .insert({ client_id: clientId, channel })
+    .select("id, client_id, channel, is_active")
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true, channel: data };
+}
+
+export async function setClientChannelActive(id: number, isActive: boolean) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("digital_client_channels").update({ is_active: isActive }).eq("id", id);
   if (error) return { error: error.message };
 
   revalidatePath("/digital-opti");

@@ -4,6 +4,10 @@ import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { Card, Pill } from "@/components/ui";
+import { currentInstant, lookbackIsoDate } from "@/lib/digitalOpti";
+import { buildOutstandingItems, type AtlTaskInput, type DigitalTaskInput } from "@/lib/dashboardTasks";
+
+const LOG_LOOKBACK_DAYS = 100;
 
 export default async function DashboardPage() {
   const visibility = await getVisibility();
@@ -11,6 +15,7 @@ export default async function DashboardPage() {
   const { profile, isAdmin, canSee } = visibility;
 
   const supabase = await createClient();
+  const now = currentInstant();
 
   const [{ count: publishedTools }, { count: myRequests }, { count: recentTips }] = await Promise.all([
     supabase.from("tools").select("id", { count: "exact", head: true }).eq("status", "published"),
@@ -31,6 +36,76 @@ export default async function DashboardPage() {
     openTickets = ot ?? 0;
     newAiRequests = nar ?? 0;
   }
+
+  // "Your outstanding & upcoming" — ATL links and Digital channels assigned
+  // to this specific person (not a team-wide view). RLS already scopes
+  // atl_client_assignees/digital_client_assignees rows to has_section, so
+  // these simply come back empty for someone without ATL/Digital access.
+  const [{ data: atlAssignedRows }, { data: digitalLeadRows }, { data: digitalAssignedRows }] = await Promise.all([
+    supabase.from("atl_client_assignees").select("client_id").eq("profile_id", profile.id),
+    supabase.from("clients").select("id").eq("account_lead_id", profile.id).eq("on_digital", true),
+    supabase.from("digital_client_assignees").select("client_id").eq("profile_id", profile.id),
+  ]);
+
+  const atlClientIds = Array.from(new Set((atlAssignedRows ?? []).map((r) => r.client_id)));
+  const digitalClientIds = Array.from(
+    new Set([
+      ...(digitalLeadRows ?? []).map((r) => r.id),
+      ...(digitalAssignedRows ?? []).map((r) => r.client_id),
+    ]),
+  );
+
+  const [{ data: atlLinkRows }, { data: digitalChannelRows }] = await Promise.all([
+    atlClientIds.length > 0
+      ? supabase
+          .from("atl_links")
+          .select("title, cadence, drive_modified_at, client:clients(name)")
+          .in("client_id", atlClientIds)
+      : Promise.resolve({ data: [] as { title: string; cadence: string | null; drive_modified_at: string | null; client: unknown }[] }),
+    digitalClientIds.length > 0
+      ? supabase
+          .from("digital_client_channels")
+          .select("id, channel, client:clients(name, digital_cadence)")
+          .in("client_id", digitalClientIds)
+          .eq("is_active", true)
+      : Promise.resolve({ data: [] as { id: number; channel: string; client: unknown }[] }),
+  ]);
+
+  const digitalChannelIds = (digitalChannelRows ?? []).map((c) => c.id);
+  const { data: digitalLogRows } =
+    digitalChannelIds.length > 0
+      ? await supabase
+          .from("digital_opti_logs")
+          .select("client_channel_id, completed_at, voided_at")
+          .in("client_channel_id", digitalChannelIds)
+          .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now))
+      : { data: [] as { client_channel_id: number; completed_at: string; voided_at: string | null }[] };
+
+  const logsByChannel = new Map<number, { completed_at: string; voided_at: string | null }[]>();
+  for (const log of digitalLogRows ?? []) {
+    const arr = logsByChannel.get(log.client_channel_id) ?? [];
+    arr.push({ completed_at: log.completed_at, voided_at: log.voided_at });
+    logsByChannel.set(log.client_channel_id, arr);
+  }
+
+  const atlInputs: AtlTaskInput[] = (atlLinkRows ?? []).map((l) => ({
+    clientName: (l.client as unknown as { name: string } | null)?.name ?? "Unknown",
+    title: l.title,
+    cadence: l.cadence,
+    driveModifiedAt: l.drive_modified_at,
+  }));
+
+  const digitalInputs: DigitalTaskInput[] = (digitalChannelRows ?? []).map((ch) => {
+    const client = ch.client as unknown as { name: string; digital_cadence: string } | null;
+    return {
+      clientName: client?.name ?? "Unknown",
+      channel: ch.channel,
+      cadence: client?.digital_cadence ?? "weekly",
+      logs: logsByChannel.get(ch.id) ?? [],
+    };
+  });
+
+  const taskItems = buildOutstandingItems(atlInputs, digitalInputs, now);
 
   const tiles = [
     {
@@ -61,6 +136,13 @@ export default async function DashboardPage() {
       hint: "clients & live material",
       show: canSee("atl"),
     },
+    {
+      href: "/digital-opti",
+      label: "Digital Opti Tracking",
+      value: "→",
+      hint: "cadence & optimisation log",
+      show: canSee("digital_opti"),
+    },
   ];
 
   return (
@@ -86,6 +168,41 @@ export default async function DashboardPage() {
             </Link>
           ))}
       </div>
+
+      {taskItems.length > 0 && (
+        <div className="px-8 pb-8">
+          <h2 className="mb-3 text-sm font-bold text-ink">Your outstanding & upcoming</h2>
+          <div className="space-y-2">
+            {taskItems.map((item, i) => (
+              <Link key={i} href={item.href}>
+                <Card className="flex items-center justify-between gap-4 transition-colors hover:border-gold/50">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">
+                      {item.kind === "atl" ? "ATL" : "Digital"} · {item.clientName}
+                    </div>
+                    <div className="font-medium text-ink">{item.itemLabel}</div>
+                  </div>
+                  <div className="flex flex-none items-center gap-3">
+                    {item.dueDate && (
+                      <span className="text-xs text-charcoal">
+                        Due{" "}
+                        {new Date(item.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                        item.status === "outstanding" ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"
+                      }`}
+                    >
+                      {item.status === "outstanding" ? "Outstanding" : "Upcoming"}
+                    </span>
+                  </div>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isAdmin && (
         <div className="px-8 pb-8">

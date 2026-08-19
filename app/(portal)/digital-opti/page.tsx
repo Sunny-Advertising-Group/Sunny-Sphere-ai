@@ -19,13 +19,14 @@ export default async function DigitalOptiPage() {
 
   const [{ data: clients }, { data: channels }, { data: logs }, { data: settings }] = await Promise.all([
     supabase
-      .from("digital_clients")
-      .select("id, name, colour, retainer, wip_doc_url, status, lead:profiles(full_name, email)")
-      .neq("status", "archived")
+      .from("clients")
+      .select("id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, lead:profiles(full_name, email)")
+      .eq("on_digital", true)
+      .neq("digital_status", "archived")
       .order("name"),
     supabase
       .from("digital_client_channels")
-      .select("id, client_id, channel, cadence, is_active")
+      .select("id, client_id, channel, is_active")
       .eq("is_active", true),
     supabase
       .from("digital_opti_logs")
@@ -42,7 +43,8 @@ export default async function DigitalOptiPage() {
       colour: client.colour,
       retainer: client.retainer,
       wipDocUrl: client.wip_doc_url,
-      status: client.status,
+      status: client.digital_status ?? "active",
+      cadence: client.digital_cadence ?? "weekly",
       leadName: lead?.full_name || lead?.email || null,
     };
   });
