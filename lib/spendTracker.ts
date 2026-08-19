@@ -18,6 +18,8 @@ export const CHANNELS = [
   "Radio",
   "TV",
   "Press",
+  "BVOD",
+  "Online",
   "Programmatic",
   "Digital",
   "Social",
@@ -69,8 +71,14 @@ const CHANNEL_RULES: [RegExp, Channel][] = [
   [/\bpress\b/i, "Press"],
   [/\bprint\b/i, "Press"],
   [/\bnewspaper\b/i, "Press"],
+  // BVOD, Display, and Native are checked ahead of the generic "programmatic"
+  // rule so "Programmatic Display", "Programmatic Native" etc. land on their
+  // specific bucket rather than the catch-all Programmatic one. BVOD stays
+  // its own channel; Display and Native are both called "Online".
+  [/\bbvod\b/i, "BVOD"],
+  [/\bdisplay\b/i, "Online"],
+  [/\bnative\b/i, "Online"],
   [/\bprogrammatic\b/i, "Programmatic"],
-  [/\bbvod\b/i, "Programmatic"],
   [/\bcinema\b/i, "Cinema"],
   [/\bsocial\b/i, "Social"],
   [/\bsearch\b/i, "Search"],
