@@ -172,51 +172,51 @@ export default async function AdminPage({
     {
       id: "invite",
       title: "Invite someone",
-      icon: UserPlus,
+      icon: <UserPlus className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <InviteForm />,
     },
     {
       id: "tools-pending",
       title: "Tools pending review",
-      icon: Wrench,
+      icon: <Wrench className="h-5 w-5" strokeWidth={2} aria-hidden />,
       badge: pendingTools?.length ?? 0,
       content: <ToolQueue tools={pendingTools ?? []} />,
     },
     {
       id: "tools-published",
       title: "Published tools",
-      icon: CheckCircle2,
+      icon: <CheckCircle2 className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <PublishedToolsList tools={publishedTools ?? []} />,
     },
     {
       id: "tips-pending",
       title: "Tips & prompts pending review",
-      icon: Sparkles,
+      icon: <Sparkles className="h-5 w-5" strokeWidth={2} aria-hidden />,
       badge: pendingTips?.length ?? 0,
       content: <TipQueue tips={pendingTips ?? []} />,
     },
     {
       id: "tips-published",
       title: "Published tips & prompts",
-      icon: MessageSquareText,
+      icon: <MessageSquareText className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <PublishedTipsList tips={publishedTips ?? []} />,
     },
     {
       id: "ai-requests",
       title: "Could this be AI'd? inbox",
-      icon: Lightbulb,
+      icon: <Lightbulb className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <RequestsInbox requests={aiRequests ?? []} />,
     },
     {
       id: "tickets",
       title: "Support tickets",
-      icon: LifeBuoy,
+      icon: <LifeBuoy className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <TicketsInbox tickets={tickets ?? []} />,
     },
     {
       id: "agency-policies",
       title: "Agency — policies & resources",
-      icon: FileText,
+      icon: <FileText className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: (
         <>
           <div className="mb-4">
@@ -229,7 +229,7 @@ export default async function AdminPage({
     {
       id: "agency-faqs",
       title: "Agency — FAQs",
-      icon: HelpCircle,
+      icon: <HelpCircle className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: (
         <>
           <div className="mb-4">
@@ -242,7 +242,7 @@ export default async function AdminPage({
     {
       id: "learning-paths",
       title: "Learning — paths",
-      icon: GraduationCap,
+      icon: <GraduationCap className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: (
         <>
           <div className="mb-4">
@@ -255,7 +255,7 @@ export default async function AdminPage({
     {
       id: "learning-videos",
       title: "Learning — training videos",
-      icon: Video,
+      icon: <Video className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: (
         <>
           <div className="mb-4">
@@ -268,7 +268,7 @@ export default async function AdminPage({
     {
       id: "clients",
       title: "Clients — ATL & Digital",
-      icon: Building2,
+      icon: <Building2 className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: (
         <ClientsManager
           clients={clients ?? []}
@@ -283,13 +283,13 @@ export default async function AdminPage({
     {
       id: "digital-opti-log",
       title: "Digital — optimisation log",
-      icon: ClipboardList,
+      icon: <ClipboardList className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <DigitalOptiLogViewer logs={optiLogs} />,
     },
     {
       id: "people",
       title: "People & access",
-      icon: Users,
+      icon: <Users className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <PeopleTable people={people} />,
     },
   ];

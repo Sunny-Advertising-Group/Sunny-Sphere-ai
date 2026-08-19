@@ -1,14 +1,17 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { X, type LucideIcon } from "lucide-react";
+import { X } from "lucide-react";
 import { Card } from "@/components/ui";
 
 export type SectionCardDef = {
   id: string;
   title: string;
   description?: string;
-  icon: LucideIcon;
+  // A rendered element (e.g. `<Wrench className="h-5 w-5" />`), not a
+  // component reference — a bare component type isn't serializable across
+  // the server/client boundary, but a JSX element is.
+  icon: ReactNode;
   badge?: string | number;
   content: ReactNode;
 };
@@ -35,7 +38,7 @@ export function SectionCardGrid({
             <Card className="h-full transition-colors hover:border-gold/50">
               <div className="flex items-start gap-3">
                 <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-gold/15 text-gold">
-                  <s.icon className="h-5 w-5" strokeWidth={2} aria-hidden />
+                  {s.icon}
                 </span>
                 <div className="min-w-0">
                   <div className="font-semibold text-ink">{s.title}</div>
@@ -70,7 +73,7 @@ export function SectionCardGrid({
             </button>
             <div className="mb-5 flex items-center gap-3">
               <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-gold/15 text-gold">
-                <selected.icon className="h-5 w-5" strokeWidth={2} aria-hidden />
+                {selected.icon}
               </span>
               <h2 className="text-lg font-extrabold text-ink">{selected.title}</h2>
             </div>
