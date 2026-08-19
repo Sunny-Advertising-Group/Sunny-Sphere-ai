@@ -12,7 +12,7 @@ import {
   type TeamSplitRow,
   type TierInfo,
 } from "@/lib/digitalOpti";
-import { logOpti, updateScheduleLabel } from "./actions";
+import { logOpti, updateClientWipUrl, updateScheduleLabel } from "./actions";
 
 export type { ClientCardData, TeamSplitRow };
 
@@ -88,6 +88,10 @@ export function DigitalOptiBoard({
   );
   const filteredRows =
     tierFilter === "all" ? clientRows : clientRows.filter((c) => c.tier?.id === tierFilter);
+
+  function setWipUrl(clientId: number, url: string | null) {
+    setClientRows((prev) => prev.map((c) => (c.id !== clientId ? c : { ...c, wipDocUrl: url })));
+  }
 
   function tick(clientId: number, channelId: number) {
     setClientRows((prev) =>
@@ -213,17 +217,12 @@ export function DigitalOptiBoard({
                       style={{ background: client.colour || "#FDB600" }}
                     />
                     <span className="font-semibold text-ink">{client.name}</span>
-                    {client.wipDocUrl && (
-                      <a
-                        href={client.wipDocUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-full border border-border-c bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-charcoal hover:border-gold/50 hover:text-gold"
-                      >
-                        WIP
-                        <ExternalLink className="h-3 w-3" strokeWidth={2} aria-hidden />
-                      </a>
-                    )}
+                    <WipBadge
+                      clientId={client.id}
+                      url={client.wipDocUrl}
+                      isAdmin={isAdmin}
+                      onSaved={(url) => setWipUrl(client.id, url)}
+                    />
                     {client.tier && (
                       <span
                         className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
@@ -285,6 +284,97 @@ function StatTile({ label, value }: { label: string; value: string }) {
       <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">{label}</div>
       <div className="mt-2 text-lg font-bold text-ink">{value}</div>
     </Card>
+  );
+}
+
+function WipBadge({
+  clientId,
+  url,
+  isAdmin,
+  onSaved,
+}: {
+  clientId: number;
+  url: string | null;
+  isAdmin: boolean;
+  onSaved: (url: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(fd: FormData) {
+    setError(null);
+    const next = String(fd.get("wip_url") ?? "").trim() || null;
+    startTransition(async () => {
+      const result = await updateClientWipUrl(clientId, next);
+      if ((result as { error?: string })?.error) setError((result as { error?: string }).error!);
+      else {
+        onSaved(next);
+        setEditing(false);
+      }
+    });
+  }
+
+  if (editing) {
+    return (
+      <form action={handleSubmit} className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+        <Input
+          name="wip_url"
+          defaultValue={url ?? ""}
+          placeholder="https://…"
+          autoFocus
+          className="h-7 w-48 py-1 text-xs"
+        />
+        <Button type="submit" disabled={pending} className="px-2 py-1 text-xs">
+          {pending ? "…" : "Save"}
+        </Button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="text-xs text-charcoal hover:text-ink"
+        >
+          Cancel
+        </button>
+        {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+      </form>
+    );
+  }
+
+  if (!url) {
+    if (!isAdmin) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="inline-flex items-center gap-1 rounded-full border border-dashed border-border-c bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-charcoal hover:border-gold/50 hover:text-gold"
+      >
+        + Add WIP
+      </button>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 rounded-full border border-border-c bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-charcoal hover:border-gold/50 hover:text-gold"
+      >
+        WIP
+        <ExternalLink className="h-3 w-3" strokeWidth={2} aria-hidden />
+      </a>
+      {isAdmin && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="text-charcoal hover:text-gold"
+          aria-label="Edit WIP link"
+        >
+          <Pencil className="h-3 w-3" strokeWidth={2} />
+        </button>
+      )}
+    </span>
   );
 }
 
