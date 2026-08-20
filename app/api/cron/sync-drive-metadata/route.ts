@@ -5,13 +5,17 @@ import { extractDriveFileId, fetchDriveMetadata, isAuthorizedCronRequest, mapWit
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Daily (4pm AEST / 06:00 UTC) Drive metadata sync for the Housekeeping tab
-// (see vercel.json for the schedule). Refreshes drive_modified_at/drive_modified_by for every atl_links
-// row that has a tracked cadence, by reading the underlying Drive file's
-// metadata via a plain API key — which only works because those files are
-// shared "Anyone with the link can view". Folder links only reflect changes
-// to the folder itself (rename, description), not files added inside it —
-// Drive doesn't roll content changes up to folder modifiedTime.
+// Hourly (on the hour) Drive metadata sync for the Housekeeping tab
+// (see vercel.json for the schedule). Refreshes drive_modified_at/drive_modified_by
+// for every atl_links row across every client — cadence only controls whether a
+// row shows a current/due-soon/overdue status (housekeepingStatus() in lib/atl.ts
+// treats no-cadence as "not_tracked"), it no longer gates the sync itself, so
+// Last updated/By populate for a link the moment it's added, before anyone sets
+// a cadence — by reading the underlying Drive file's metadata via a plain API
+// key, which only works because those files are shared "Anyone with the link
+// can view". Folder links only reflect changes to the folder itself (rename,
+// description), not files added inside it — Drive doesn't roll content changes
+// up to folder modifiedTime.
 export async function GET(request: Request) {
   if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,11 +27,7 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const { data: links, error } = await supabase
-    .from("atl_links")
-    .select("id, url, cadence")
-    .not("cadence", "is", null)
-    .neq("cadence", "none");
+  const { data: links, error } = await supabase.from("atl_links").select("id, url");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
