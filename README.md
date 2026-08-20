@@ -29,18 +29,18 @@ npm run dev
 - `lib/supabase/` — browser, server (cookie-based), and service-role clients
 - `lib/access.ts` — single source of truth for what the current user can see
 - `lib/actions/` — shared server actions (admin mutations, resource content entry)
-- `app/api/cron/sync-drive-metadata` — daily (4pm AEST) job that refreshes the Links tab's "last updated"/"by" columns
-- `app/api/cron/sync-live-material` — daily (4:15pm AEST) job that replaces each client's Live material rows from their tracker sheet
+- `app/api/cron/sync-drive-metadata` — hourly (on the hour) job that refreshes the Links tab's "last updated"/"by" columns
+- `app/api/cron/sync-live-material` — hourly (:15 past the hour) job that replaces each client's Live material rows from their tracker sheet
 - (see `vercel.json` for both schedules)
 
 ## Google Drive syncs (Links freshness + Live material)
 
 Both syncs read from Drive using a single plain API key — no service account — which only works because the target files are shared "Anyone with the link can view". If that sharing ever changes for a file, its sync starts failing (currently silently for the metadata sync: `drive_checked_at` still updates but `drive_modified_at` won't, so a row stuck on a stale date is the tell; the live material sync logs and skips that client on export failure, leaving its existing rows in place).
 
-- **Links freshness** (`sync-drive-metadata`): runs daily at 4pm AEST (06:00 UTC). Each `atl_links` row can have a `cadence` (weekly/fortnightly/monthly/quarterly/none). For rows with a cadence, this job reads `modifiedTime`/`lastModifyingUser` via `files.get` and writes `drive_modified_at`/`drive_modified_by`, which drive the current/due soon/overdue status shown in the Links tab. Known limitation: for links pointing at a folder rather than a single file, `modifiedTime` only reflects changes to the folder itself (rename, description), not files added/edited inside it.
-- **Live material** (`sync-live-material`): runs daily at 4:15pm AEST (06:15 UTC), 15 minutes after the Links freshness sync. For every `atl_links` row with kind `live_material_tracker`, exports that client's tracker Google Sheet as CSV via `files.export`, parses it with `lib/liveMaterial.ts`, and replaces (delete + insert) that client's `live_material` rows. The tracker sheet is the source of truth, so this is a full replace, not a merge.
+- **Links freshness** (`sync-drive-metadata`): runs hourly, on the hour. Each `atl_links` row can have a `cadence` (weekly/fortnightly/monthly/quarterly/none). For rows with a cadence, this job reads `modifiedTime`/`lastModifyingUser` via `files.get` and writes `drive_modified_at`/`drive_modified_by`, which drive the current/due soon/overdue status shown in the Links tab. Known limitation: for links pointing at a folder rather than a single file, `modifiedTime` only reflects changes to the folder itself (rename, description), not files added/edited inside it.
+- **Live material** (`sync-live-material`): runs hourly, 15 minutes past the hour, after the Links freshness sync. For every `atl_links` row with kind `live_material_tracker`, exports that client's tracker Google Sheet as CSV via `files.export`, parses it with `lib/liveMaterial.ts`, and replaces (delete + insert) that client's `live_material` rows. The tracker sheet is the source of truth, so this is a full replace, not a merge.
 
-Setup: `GOOGLE_DRIVE_API_KEY` (a Drive-API-only key, no service account) and `CRON_SECRET` (checked against each cron request's `Authorization` header) as Vercel env vars — see `.env.example`. Note: Vercel's Hobby plan runs cron jobs at most once a day regardless of the schedule string in `vercel.json` — true hourly runs need a Pro (or higher) plan.
+Setup: `GOOGLE_DRIVE_API_KEY` (a Drive-API-only key, no service account) and `CRON_SECRET` (checked against each cron request's `Authorization` header) as Vercel env vars — see `.env.example`. Note: Vercel's Hobby plan runs cron jobs at most once a day regardless of the schedule string in `vercel.json` — true hourly runs need a Pro (or higher) plan, so confirm the Vercel project is on Pro or above for this schedule to actually take effect.
 
 ## Known deferred work
 

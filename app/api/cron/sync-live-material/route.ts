@@ -7,7 +7,7 @@ import { LIVE_MATERIAL_KIND_PATTERN } from "@/lib/atl";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Daily sync (4:15pm AEST / 06:15 UTC, see vercel.json) for the Live material
+// Hourly sync (15 minutes past the hour, see vercel.json) for the Live material
 // tab: exports every
 // tracker Google Sheet (any atl_links row whose kind contains "live_material"
 // — most clients have one, Lincoln Place has three, split by state) as CSV
