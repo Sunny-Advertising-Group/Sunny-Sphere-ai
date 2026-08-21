@@ -44,6 +44,35 @@ export async function logOpti(clientChannelId: number) {
   return { success: true };
 }
 
+export async function unlogOpti(clientChannelId: number) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { data: channel } = await supabase
+    .from("digital_client_channels")
+    .select("client:clients(digital_cadence)")
+    .eq("id", clientChannelId)
+    .single();
+  const cadence = (channel?.client as unknown as { digital_cadence: string } | null)?.digital_cadence;
+  if (!cadence) return { error: "Channel not found." };
+
+  const start = periodStart(cadence).toISOString();
+  const { error } = await supabase
+    .from("digital_opti_logs")
+    .update({ voided_at: new Date().toISOString(), voided_by: user.id })
+    .eq("client_channel_id", clientChannelId)
+    .is("voided_at", null)
+    .gte("completed_at", start);
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
 export async function updateScheduleLabel(_prevState: unknown, formData: FormData) {
   const supabase = await createClient();
   const label = String(formData.get("schedule_label") ?? "").trim();
@@ -150,6 +179,44 @@ export async function setClientChannelActive(id: number, isActive: boolean) {
 export async function updateClientWipUrl(clientId: number, url: string | null) {
   const supabase = await createClient();
   const { error } = await supabase.from("clients").update({ wip_doc_url: url }).eq("id", clientId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+// --- Admin: per-channel owners (who works this channel, and their share of
+// its retainer credit — the client's displayed "lead" is derived from this,
+// not stored directly) ---
+
+export async function addChannelOwner(clientChannelId: number, profileId: string, splitPct: number) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("digital_channel_owners")
+    .insert({ client_channel_id: clientChannelId, profile_id: profileId, split_pct: splitPct })
+    .select("id, client_channel_id, profile_id, split_pct")
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true, owner: data };
+}
+
+export async function updateChannelOwnerSplit(ownerId: number, splitPct: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("digital_channel_owners").update({ split_pct: splitPct }).eq("id", ownerId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function removeChannelOwner(ownerId: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("digital_channel_owners").delete().eq("id", ownerId);
   if (error) return { error: error.message };
 
   revalidatePath("/digital-opti");

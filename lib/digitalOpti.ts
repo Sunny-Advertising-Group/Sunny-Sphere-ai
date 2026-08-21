@@ -51,6 +51,11 @@ export function clientStatusMeta(status: string) {
   return CLIENT_STATUS_META[status] ?? { label: status, className: "text-charcoal bg-black/5" };
 }
 
+// Tiers whose optimisation weeks are gated by `digital_opti_schedule` (the
+// Black/Yellow/Blue rotation). A tier not in this set — e.g. Red — is always
+// due and unaffected by the rotation, since it never appears in that table.
+export const SCHEDULED_TIER_NAMES = ["Black", "Yellow", "Blue"];
+
 const WEEK_MS = 7 * 86_400_000;
 // 2024-01-01 is a Monday — a fixed, arbitrary anchor so every client/channel's
 // weekly and fortnightly periods land on the same real-world boundaries with
@@ -126,7 +131,12 @@ export function lookbackIsoDate(days: number, now: Date): string {
 
 export type RawOptiLog = { client_channel_id: number; completed_at: string; voided_at: string | null };
 
-export type ChannelInput = { id: number; client_id: number; channel: string };
+// Who works a channel, and what share of its retainer credit they hold.
+// Multiple owners on one channel (e.g. a lead + a second) split it between
+// them — splitPct values aren't required to sum to 100.
+export type ChannelOwnerInput = { profileId: string; name: string; splitPct: number };
+
+export type ChannelInput = { id: number; client_id: number; channel: string; owners: ChannelOwnerInput[] };
 
 export type TierInfo = { id: number; name: string; colour: string; sortOrder: number };
 
@@ -137,7 +147,6 @@ export type ClientInput = {
   retainer: number | null;
   wipDocUrl: string | null;
   status: string;
-  leadName: string | null;
   // Cadence is set once per client — every active channel on that client
   // shares the same optimisation schedule, rather than each channel having
   // its own.
@@ -150,11 +159,14 @@ export type ClientChannelCard = {
   channel: string;
   done: boolean;
   lastLoggedAt: string | null;
+  owners: ChannelOwnerInput[];
 };
 
-export type ClientCardData = ClientInput & { channels: ClientChannelCard[] };
+// leadName is derived, not stored — it's whoever holds the largest total
+// split across the client's channels (see buildDigitalOptiBoardData).
+export type ClientCardData = ClientInput & { channels: ClientChannelCard[]; leadName: string | null };
 
-export type TeamSplitRow = { lead: string; clients: number; retainer: number };
+export type TeamSplitRow = { lead: string; clients: number; retainer: number; channels: number };
 
 export type DigitalOptiBoardData = {
   clientCards: ClientCardData[];
@@ -169,11 +181,28 @@ export type DigitalOptiBoardData = {
 // plain function (rather than inline in the page component) so the
 // reduce-style accumulation isn't flagged as component-render mutation by
 // the React Compiler eslint rules.
+// Whether a client's channel counts toward this week's completion stat.
+// A tier gated by the rotation (Black/Yellow/Blue) only counts in a week
+// where its tier id is in `activeTierIds`; an ungated tier (e.g. Red) or an
+// untiered client always counts; and if no schedule row exists for this
+// week at all (`activeTierIds` is null), nothing is filtered.
+function isDueThisWeek(
+  tierId: number | undefined,
+  scheduledTierIds: number[],
+  activeTierIds: number[] | null,
+): boolean {
+  if (activeTierIds === null) return true;
+  if (tierId == null || !scheduledTierIds.includes(tierId)) return true;
+  return activeTierIds.includes(tierId);
+}
+
 export function buildDigitalOptiBoardData(
   clients: ClientInput[],
   channels: ChannelInput[],
   logs: RawOptiLog[],
   now: Date,
+  scheduledTierIds: number[] = [],
+  activeTierIds: number[] | null = null,
 ): DigitalOptiBoardData {
   const logsByChannel = new Map<number, OptiLog[]>();
   for (const log of logs) {
@@ -192,8 +221,10 @@ export function buildDigitalOptiBoardData(
   let totalActive = 0;
   let totalDone = 0;
   let lastUpdatedAt: string | null = null;
+  const personWorkload = new Map<string, number>();
 
   const clientCards: ClientCardData[] = clients.map((client) => {
+    const dueThisWeek = isDueThisWeek(client.tier?.id, scheduledTierIds, activeTierIds);
     const chans: ClientChannelCard[] = (channelsByClient.get(client.id) ?? [])
       .slice()
       .sort((a, b) => CHANNEL_ORDER.indexOf(a.channel) - CHANNEL_ORDER.indexOf(b.channel))
@@ -201,12 +232,35 @@ export function buildDigitalOptiBoardData(
         const chLogs = logsByChannel.get(ch.id) ?? [];
         const done = isLoggedForCurrentPeriod(client.cadence, chLogs, now);
         const lastLogged = lastLoggedAt(chLogs);
-        totalActive += 1;
-        if (done) totalDone += 1;
+        if (dueThisWeek) {
+          totalActive += 1;
+          if (done) totalDone += 1;
+        }
         if (lastLogged && (!lastUpdatedAt || lastLogged > lastUpdatedAt)) lastUpdatedAt = lastLogged;
-        return { id: ch.id, channel: ch.channel, done, lastLoggedAt: lastLogged };
+        for (const owner of ch.owners) {
+          personWorkload.set(owner.name, (personWorkload.get(owner.name) ?? 0) + owner.splitPct / 100);
+        }
+        return { id: ch.id, channel: ch.channel, done, lastLoggedAt: lastLogged, owners: ch.owners };
       });
-    return { ...client, channels: chans };
+
+    // Derived lead: whoever holds the largest total split across this
+    // client's channels (ties keep whichever was seen first).
+    const splitTotals = new Map<string, number>();
+    for (const c of chans) {
+      for (const owner of c.owners) {
+        splitTotals.set(owner.name, (splitTotals.get(owner.name) ?? 0) + owner.splitPct);
+      }
+    }
+    let leadName: string | null = null;
+    let bestSplit = -1;
+    for (const [name, total] of splitTotals) {
+      if (total > bestSplit) {
+        bestSplit = total;
+        leadName = name;
+      }
+    }
+
+    return { ...client, channels: chans, leadName };
   });
 
   // Tiered hierarchy: untiered clients (sortOrder undefined) sort last,
@@ -219,10 +273,18 @@ export function buildDigitalOptiBoardData(
   const teamSplitMap = new Map<string, TeamSplitRow>();
   for (const client of clientCards) {
     const key = client.leadName ?? "Unassigned";
-    const row = teamSplitMap.get(key) ?? { lead: key, clients: 0, retainer: 0 };
+    const row = teamSplitMap.get(key) ?? { lead: key, clients: 0, retainer: 0, channels: 0 };
     row.clients += 1;
     row.retainer += client.retainer ?? 0;
     teamSplitMap.set(key, row);
+  }
+  // Anyone with channel workload gets a row too, even if they're never the
+  // top-split "lead" of any client (e.g. a second who's spread thin).
+  for (const [name, workload] of personWorkload) {
+    if (!teamSplitMap.has(name)) {
+      teamSplitMap.set(name, { lead: name, clients: 0, retainer: 0, channels: 0 });
+    }
+    teamSplitMap.get(name)!.channels = Math.round(workload * 10) / 10;
   }
   const teamSplit = Array.from(teamSplitMap.values()).sort((a, b) => b.retainer - a.retainer);
 

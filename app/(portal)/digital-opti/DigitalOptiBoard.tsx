@@ -12,7 +12,7 @@ import {
   type TeamSplitRow,
   type TierInfo,
 } from "@/lib/digitalOpti";
-import { logOpti, updateClientWipUrl, updateScheduleLabel } from "./actions";
+import { logOpti, unlogOpti, updateClientWipUrl, updateScheduleLabel } from "./actions";
 
 export type { ClientCardData, TeamSplitRow };
 
@@ -87,28 +87,29 @@ export function DigitalOptiBoard({
     setClientRows((prev) => prev.map((c) => (c.id !== clientId ? c : { ...c, wipDocUrl: url })));
   }
 
-  function tick(clientId: number, channelId: number) {
+  function setChannelDone(clientId: number, channelId: number, done: boolean) {
     setClientRows((prev) =>
       prev.map((c) =>
         c.id !== clientId
           ? c
-          : {
-              ...c,
-              channels: c.channels.map((ch) => (ch.id === channelId ? { ...ch, done: true } : ch)),
-            },
+          : { ...c, channels: c.channels.map((ch) => (ch.id === channelId ? { ...ch, done } : ch)) },
       ),
     );
+  }
+
+  function tick(clientId: number, channelId: number) {
+    setChannelDone(clientId, channelId, true);
     startTransition(async () => {
       const result = await logOpti(channelId);
-      if ((result as { error?: string })?.error) {
-        setClientRows((prev) =>
-          prev.map((c) =>
-            c.id !== clientId
-              ? c
-              : { ...c, channels: c.channels.map((ch) => (ch.id === channelId ? { ...ch, done: false } : ch)) },
-          ),
-        );
-      }
+      if ((result as { error?: string })?.error) setChannelDone(clientId, channelId, false);
+    });
+  }
+
+  function untick(clientId: number, channelId: number) {
+    setChannelDone(clientId, channelId, false);
+    startTransition(async () => {
+      const result = await unlogOpti(channelId);
+      if ((result as { error?: string })?.error) setChannelDone(clientId, channelId, true);
     });
   }
 
@@ -145,6 +146,7 @@ export function DigitalOptiBoard({
                 <th className="px-4 py-3">Team split</th>
                 <th className="px-4 py-3">Clients</th>
                 <th className="px-4 py-3">Retainer</th>
+                <th className="px-4 py-3">Channels</th>
               </tr>
             </thead>
             <tbody>
@@ -153,6 +155,7 @@ export function DigitalOptiBoard({
                   <td className="px-4 py-2.5 font-medium text-ink">{row.lead}</td>
                   <td className="px-4 py-2.5 text-charcoal">{row.clients}</td>
                   <td className="px-4 py-2.5 text-charcoal">{currency.format(row.retainer)}</td>
+                  <td className="px-4 py-2.5 text-charcoal">{row.channels}</td>
                 </tr>
               ))}
               <tr className="font-semibold text-ink">
@@ -160,6 +163,9 @@ export function DigitalOptiBoard({
                 <td className="px-4 py-2.5">{teamSplit.reduce((n, r) => n + r.clients, 0)}</td>
                 <td className="px-4 py-2.5">
                   {currency.format(teamSplit.reduce((n, r) => n + r.retainer, 0))}
+                </td>
+                <td className="px-4 py-2.5">
+                  {Math.round(teamSplit.reduce((n, r) => n + r.channels, 0) * 10) / 10}
                 </td>
               </tr>
             </tbody>
@@ -259,11 +265,11 @@ export function DigitalOptiBoard({
                     <button
                       key={ch.id}
                       type="button"
-                      disabled={ch.done}
-                      onClick={() => tick(client.id, ch.id)}
+                      onClick={() => (ch.done ? untick(client.id, ch.id) : tick(client.id, ch.id))}
+                      title={ch.done ? "Click to undo this week's tick" : "Mark done for this period"}
                       className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold text-ink transition-colors ${
                         ch.done
-                          ? "border-emerald-200 bg-emerald-50"
+                          ? "border-emerald-200 bg-emerald-50 hover:border-emerald-400"
                           : "border-border-c bg-white hover:border-gold/50"
                       }`}
                     >
@@ -274,7 +280,14 @@ export function DigitalOptiBoard({
                       >
                         {ch.done && "✓"}
                       </span>
-                      {channelLabel(ch.channel)}
+                      <span className="flex flex-col">
+                        {channelLabel(ch.channel)}
+                        {ch.owners.length > 0 && (
+                          <span className="text-[9px] font-medium normal-case text-charcoal/70">
+                            {ch.owners.map((o) => `${o.name} ${o.splitPct}%`).join(" · ")}
+                          </span>
+                        )}
+                      </span>
                     </button>
                   ))}
                 </div>
