@@ -61,6 +61,7 @@ export function DigitalOptiBoard({
   scheduleLabel,
   isAdmin,
   tiers,
+  myProfileId,
 }: {
   clients: ClientCardData[];
   completionPct: number;
@@ -71,17 +72,22 @@ export function DigitalOptiBoard({
   scheduleLabel: string | null;
   isAdmin: boolean;
   tiers: TierInfo[];
+  myProfileId: string;
 }) {
   const [clientRows, setClientRows] = useState(clients);
   const [tierFilter, setTierFilter] = useState<number | "all">("all");
+  const [myClientsOnly, setMyClientsOnly] = useState(false);
   const [, startTransition] = useTransition();
 
   const usedTiers = useMemo(
     () => tiers.filter((t) => clientRows.some((c) => c.tier?.id === t.id)),
     [tiers, clientRows],
   );
-  const filteredRows =
-    tierFilter === "all" ? clientRows : clientRows.filter((c) => c.tier?.id === tierFilter);
+  const filteredRows = clientRows
+    .filter((c) => tierFilter === "all" || c.tier?.id === tierFilter)
+    .filter(
+      (c) => !myClientsOnly || c.channels.some((ch) => ch.owners.some((o) => o.profileId === myProfileId)),
+    );
 
   function setWipUrl(clientId: number, url: string | null) {
     setClientRows((prev) => prev.map((c) => (c.id !== clientId ? c : { ...c, wipDocUrl: url })));
@@ -114,111 +120,124 @@ export function DigitalOptiBoard({
   }
 
   return (
-    <div className="space-y-6 p-8">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Week commencing" value={formatWeekCommencing()} />
-        <ScheduleTile label={scheduleLabel} isAdmin={isAdmin} />
-        <Card>
-          <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">
-            Optimisation completion
-          </div>
-          <div className="mt-2 text-3xl font-extrabold text-ink">{completionPct}%</div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-black/5">
-            <div className="h-full rounded-full bg-gold" style={{ width: `${completionPct}%` }} />
-          </div>
-          <div className="mt-1.5 text-xs text-charcoal">
-            {totalDone} of {totalActive} due this period
-          </div>
-        </Card>
-        <Card>
-          <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Last updated</div>
-          <div className="mt-2 text-lg font-bold text-ink">
-            {lastUpdatedAt ? <LiveRelativeTime iso={lastUpdatedAt} /> : "No optis logged yet"}
-          </div>
-        </Card>
-      </div>
+    <div className="space-y-4 p-8">
+      <div className="space-y-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <StatTile label="Week commencing" value={formatWeekCommencing()} />
+          <ScheduleTile label={scheduleLabel} isAdmin={isAdmin} />
+          <Card className="p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">
+              Optimisation completion
+            </div>
+            <div className="mt-1 text-xl font-extrabold text-ink">{completionPct}%</div>
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-black/5">
+              <div className="h-full rounded-full bg-gold" style={{ width: `${completionPct}%` }} />
+            </div>
+            <div className="mt-1 text-[11px] text-charcoal">
+              {totalDone} of {totalActive} due this period
+            </div>
+          </Card>
+          <Card className="p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Last updated</div>
+            <div className="mt-1 text-sm font-bold text-ink">
+              {lastUpdatedAt ? <LiveRelativeTime iso={lastUpdatedAt} /> : "No optis logged yet"}
+            </div>
+          </Card>
+        </div>
 
-      {teamSplit.length > 0 && (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border-c text-left text-xs uppercase text-charcoal">
-                <th className="px-4 py-3">Team split</th>
-                <th className="px-4 py-3">Clients</th>
-                <th className="px-4 py-3">Retainer</th>
-                <th className="px-4 py-3">Channels</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teamSplit.map((row) => (
-                <tr key={row.lead} className="border-b border-border-c last:border-0">
-                  <td className="px-4 py-2.5 font-medium text-ink">{row.lead}</td>
-                  <td className="px-4 py-2.5 text-charcoal">{row.clients}</td>
-                  <td className="px-4 py-2.5 text-charcoal">{currency.format(row.retainer)}</td>
-                  <td className="px-4 py-2.5 text-charcoal">{row.channels}</td>
+        {teamSplit.length > 0 && (
+          <details className="rounded-2xl border border-border-c bg-white">
+            <summary className="cursor-pointer px-4 py-2 text-xs font-semibold uppercase tracking-wide text-charcoal">
+              Team split
+            </summary>
+            <table className="w-full border-t border-border-c text-sm">
+              <thead>
+                <tr className="border-b border-border-c text-left text-xs uppercase text-charcoal">
+                  <th className="px-4 py-2">Lead</th>
+                  <th className="px-4 py-2">Clients</th>
+                  <th className="px-4 py-2">Retainer</th>
+                  <th className="px-4 py-2">Channels</th>
                 </tr>
-              ))}
-              <tr className="font-semibold text-ink">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5">{teamSplit.reduce((n, r) => n + r.clients, 0)}</td>
-                <td className="px-4 py-2.5">
-                  {currency.format(teamSplit.reduce((n, r) => n + r.retainer, 0))}
-                </td>
-                <td className="px-4 py-2.5">
-                  {Math.round(teamSplit.reduce((n, r) => n + r.channels, 0) * 10) / 10}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </Card>
-      )}
+              </thead>
+              <tbody>
+                {teamSplit.map((row) => (
+                  <tr key={row.lead} className="border-b border-border-c last:border-0">
+                    <td className="px-4 py-1.5 font-medium text-ink">{row.lead}</td>
+                    <td className="px-4 py-1.5 text-charcoal">{row.clients}</td>
+                    <td className="px-4 py-1.5 text-charcoal">{currency.format(row.retainer)}</td>
+                    <td className="px-4 py-1.5 text-charcoal">{row.channels}</td>
+                  </tr>
+                ))}
+                <tr className="font-semibold text-ink">
+                  <td className="px-4 py-1.5">Total</td>
+                  <td className="px-4 py-1.5">{teamSplit.reduce((n, r) => n + r.clients, 0)}</td>
+                  <td className="px-4 py-1.5">
+                    {currency.format(teamSplit.reduce((n, r) => n + r.retainer, 0))}
+                  </td>
+                  <td className="px-4 py-1.5">
+                    {Math.round(teamSplit.reduce((n, r) => n + r.channels, 0) * 10) / 10}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </details>
+        )}
+      </div>
 
       {clientRows.length === 0 ? (
         <EmptyState title="No Digital clients yet" description="Add a client and their channels from the Admin page." />
       ) : (
         <>
-          {usedTiers.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setTierFilter("all")}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  tierFilter === "all" ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
-                }`}
-              >
-                All tiers
-              </button>
-              {usedTiers.map((t) => (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setMyClientsOnly((v) => !v)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                myClientsOnly ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
+              }`}
+            >
+              My clients
+            </button>
+            {usedTiers.length > 0 && (
+              <>
+                <span className="my-auto h-4 w-px bg-border-c" aria-hidden />
                 <button
-                  key={t.id}
-                  onClick={() => setTierFilter(t.id)}
+                  onClick={() => setTierFilter("all")}
                   className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    tierFilter === t.id ? "text-white" : "text-charcoal hover:border-gold/50"
+                    tierFilter === "all" ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
                   }`}
-                  style={
-                    tierFilter === t.id
-                      ? { background: t.colour, borderColor: t.colour }
-                      : { borderColor: "var(--border-c)" }
-                  }
                 >
-                  {t.name}
+                  All tiers
                 </button>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-col gap-2">
+                {usedTiers.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTierFilter(t.id)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      tierFilter === t.id ? "text-white" : "text-charcoal hover:border-gold/50"
+                    }`}
+                    style={
+                      tierFilter === t.id
+                        ? { background: t.colour, borderColor: t.colour }
+                        : { borderColor: "var(--border-c)" }
+                    }
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
           {filteredRows.map((client) => {
             const status = clientStatusMeta(client.status);
             return (
               <div
                 key={client.id}
-                className="flex flex-wrap items-stretch gap-2 rounded-xl border border-border-c bg-white p-2"
+                className="flex flex-wrap items-stretch gap-1.5 rounded-xl border border-border-c bg-white p-1.5"
                 style={client.tier ? { borderLeftColor: client.tier.colour, borderLeftWidth: 4 } : undefined}
               >
-                <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-ink px-3 py-2 text-white">
-                  <span
-                    className="h-2.5 w-2.5 flex-none rounded-full"
-                    style={{ background: client.colour || "#FDB600" }}
-                  />
+                <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-ink px-2.5 py-1.5 text-white">
+                  <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: "#FDB600" }} />
                   <div className="flex flex-col leading-tight">
                     {client.retainer != null && (
                       <span className="text-[11px] font-semibold text-white/70">
@@ -238,13 +257,13 @@ export function DigitalOptiBoard({
                 </div>
 
                 <div
-                  className={`flex flex-none items-center justify-center rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wide ${status.className}`}
+                  className={`flex flex-none items-center justify-center rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide ${status.className}`}
                   style={{ minWidth: 84 }}
                 >
                   {status.label}
                 </div>
 
-                <div className="flex flex-none items-center rounded-lg border border-border-c px-3 py-2">
+                <div className="flex flex-none items-center rounded-lg border border-border-c px-3 py-1.5">
                   <WipBadge
                     clientId={client.id}
                     url={client.wipDocUrl}
@@ -253,8 +272,11 @@ export function DigitalOptiBoard({
                   />
                 </div>
 
-                <div className="flex flex-none flex-col justify-center gap-0.5 rounded-lg border border-border-c px-3 py-2 text-xs">
-                  <span className="font-semibold text-ink">{client.leadName ?? "Unassigned"}</span>
+                <div className="flex flex-none flex-col justify-center gap-0.5 rounded-lg border border-border-c px-3 py-1.5 text-xs">
+                  <span className="font-semibold" style={{ color: "#CA8A04" }}>
+                    {client.leadName ?? "Unassigned"}
+                  </span>
+                  {client.secondName && <span className="font-medium text-charcoal">{client.secondName}</span>}
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-charcoal">
                     {cadenceLabel(client.cadence)}
                   </span>
@@ -267,14 +289,14 @@ export function DigitalOptiBoard({
                       type="button"
                       onClick={() => (ch.done ? untick(client.id, ch.id) : tick(client.id, ch.id))}
                       title={ch.done ? "Click to undo this week's tick" : "Mark done for this period"}
-                      className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold text-ink transition-colors ${
+                      className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-left text-[11px] font-semibold text-ink transition-colors ${
                         ch.done
                           ? "border-emerald-200 bg-emerald-50 hover:border-emerald-400"
                           : "border-border-c bg-white hover:border-gold/50"
                       }`}
                     >
                       <span
-                        className={`flex h-3.5 w-3.5 flex-none items-center justify-center rounded border ${
+                        className={`flex h-3 w-3 flex-none items-center justify-center rounded border ${
                           ch.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
                         }`}
                       >
@@ -303,9 +325,9 @@ export function DigitalOptiBoard({
 
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <Card>
+    <Card className="p-3">
       <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">{label}</div>
-      <div className="mt-2 text-lg font-bold text-ink">{value}</div>
+      <div className="mt-1 text-sm font-bold text-ink">{value}</div>
     </Card>
   );
 }
@@ -417,7 +439,7 @@ function ScheduleTile({ label, isAdmin }: { label: string | null; isAdmin: boole
 
   if (editing) {
     return (
-      <Card>
+      <Card className="p-3">
         <form action={handleSubmit} className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
           <Input name="schedule_label" defaultValue={label ?? ""} placeholder="e.g. PBR & BLUE" autoFocus />
@@ -436,7 +458,7 @@ function ScheduleTile({ label, isAdmin }: { label: string | null; isAdmin: boole
   }
 
   return (
-    <Card>
+    <Card className="p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
         {isAdmin && (
@@ -445,7 +467,7 @@ function ScheduleTile({ label, isAdmin }: { label: string | null; isAdmin: boole
           </button>
         )}
       </div>
-      <div className="mt-2 text-lg font-bold text-ink">{label || "—"}</div>
+      <div className="mt-1 text-sm font-bold text-ink">{label || "—"}</div>
     </Card>
   );
 }
