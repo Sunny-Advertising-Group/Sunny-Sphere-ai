@@ -145,7 +145,7 @@ export default async function DashboardPage() {
     },
     {
       href: "/digital-opti",
-      label: "Digital Opti Tracking",
+      label: "Digital",
       value: "→",
       hint: "cadence & optimisation log",
       show: canSee("digital_opti"),

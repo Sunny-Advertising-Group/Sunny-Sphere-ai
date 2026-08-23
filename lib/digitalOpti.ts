@@ -162,9 +162,14 @@ export type ClientChannelCard = {
   owners: ChannelOwnerInput[];
 };
 
-// leadName is derived, not stored — it's whoever holds the largest total
-// split across the client's channels (see buildDigitalOptiBoardData).
-export type ClientCardData = ClientInput & { channels: ClientChannelCard[]; leadName: string | null };
+// leadName/secondName are derived, not stored — whoever holds the largest
+// and next-largest total split across the client's channels (see
+// buildDigitalOptiBoardData).
+export type ClientCardData = ClientInput & {
+  channels: ClientChannelCard[];
+  leadName: string | null;
+  secondName: string | null;
+};
 
 export type TeamSplitRow = { lead: string; clients: number; retainer: number; channels: number };
 
@@ -243,24 +248,20 @@ export function buildDigitalOptiBoardData(
         return { id: ch.id, channel: ch.channel, done, lastLoggedAt: lastLogged, owners: ch.owners };
       });
 
-    // Derived lead: whoever holds the largest total split across this
-    // client's channels (ties keep whichever was seen first).
+    // Derived lead & second: whoever holds the largest (and next-largest)
+    // total split across this client's channels (ties keep whichever was
+    // seen first).
     const splitTotals = new Map<string, number>();
     for (const c of chans) {
       for (const owner of c.owners) {
         splitTotals.set(owner.name, (splitTotals.get(owner.name) ?? 0) + owner.splitPct);
       }
     }
-    let leadName: string | null = null;
-    let bestSplit = -1;
-    for (const [name, total] of splitTotals) {
-      if (total > bestSplit) {
-        bestSplit = total;
-        leadName = name;
-      }
-    }
+    const rankedOwners = Array.from(splitTotals.entries()).sort((a, b) => b[1] - a[1]);
+    const leadName = rankedOwners[0]?.[0] ?? null;
+    const secondName = rankedOwners[1]?.[0] ?? null;
 
-    return { ...client, channels: chans, leadName };
+    return { ...client, channels: chans, leadName, secondName };
   });
 
   // Tiered hierarchy: untiered clients (sortOrder undefined) sort last,

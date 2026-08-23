@@ -95,7 +95,7 @@ export default async function DigitalOptiPage() {
   return (
     <div>
       <PageHeader
-        title="Digital Opti Tracking"
+        title="Digital"
         description="Optimisation cadence, this week's completion, and the audit log of every tick."
       />
       <DigitalOptiBoard
@@ -108,6 +108,7 @@ export default async function DigitalOptiPage() {
         scheduleLabel={settings?.schedule_label ?? null}
         isAdmin={visibility.isAdmin}
         tiers={tierOptions}
+        myProfileId={visibility.profile.id}
       />
     </div>
   );
