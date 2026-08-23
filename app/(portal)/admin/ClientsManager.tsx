@@ -12,15 +12,18 @@ import {
   updateClient,
 } from "../atl/actions";
 import {
+  addChannelOwner,
   addClientChannel,
   addDigitalClientAssignee,
+  removeChannelOwner,
   removeDigitalClientAssignee,
   setClientChannelActive,
+  updateChannelOwnerSplit,
 } from "../digital-opti/actions";
 import { Button, Card, EmptyState, Input, Select } from "@/components/ui";
 import { AssigneePicker, type PersonOption } from "@/components/AssigneePicker";
 import { CADENCE_OPTIONS as ATL_CADENCE_OPTIONS, cadenceLabel as atlCadenceLabel, KIND_OPTIONS as KINDS } from "@/lib/atl";
-import { CADENCE_OPTIONS, CHANNEL_OPTIONS, cadenceLabel } from "@/lib/digitalOpti";
+import { CADENCE_OPTIONS, CHANNEL_OPTIONS, cadenceLabel, channelLabel } from "@/lib/digitalOpti";
 
 // Kept outside the component (rather than calling Date.now() inline in a
 // closure defined during render) so it isn't flagged as an impure call by
@@ -71,12 +74,15 @@ export type LinkRow = {
 
 export type ChannelRow = { id: number; client_id: number; channel: string; is_active: boolean };
 
+export type ChannelOwnerRow = { id: number; client_channel_id: number; profile_id: string; split_pct: number };
+
 export function ClientsManager({
   clients,
   links,
   channels,
   atlAssigneesByClient,
   digitalAssigneesByClient,
+  channelOwners,
   people,
   tiers,
 }: {
@@ -85,12 +91,14 @@ export function ClientsManager({
   channels: ChannelRow[];
   atlAssigneesByClient: Record<number, string[]>;
   digitalAssigneesByClient: Record<number, string[]>;
+  channelOwners: ChannelOwnerRow[];
   people: PersonOption[];
   tiers: TierOption[];
 }) {
   const [clientRows, setClientRows] = useState(clients);
   const [linkRows, setLinkRows] = useState(links);
   const [channelRows, setChannelRows] = useState(channels);
+  const [ownerRows, setOwnerRows] = useState(channelOwners);
   const [atlAssignments, setAtlAssignments] = useState(atlAssigneesByClient);
   const [digitalAssignments, setDigitalAssignments] = useState(digitalAssigneesByClient);
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
@@ -141,6 +149,31 @@ export function ClientsManager({
     });
   }
 
+  function addOwner(clientChannelId: number, profileId: string, splitPct: number) {
+    const tempId = nextTempId();
+    setOwnerRows((prev) => [...prev, { id: tempId, client_channel_id: clientChannelId, profile_id: profileId, split_pct: splitPct }]);
+    startTransition(async () => {
+      const result = await addChannelOwner(clientChannelId, profileId, splitPct);
+      const created = (result as { owner?: ChannelOwnerRow } | undefined)?.owner;
+      if (created) setOwnerRows((prev) => prev.map((o) => (o.id === tempId ? created : o)));
+      else setOwnerRows((prev) => prev.filter((o) => o.id !== tempId));
+    });
+  }
+
+  function updateOwnerSplit(ownerId: number, splitPct: number) {
+    setOwnerRows((prev) => prev.map((o) => (o.id === ownerId ? { ...o, split_pct: splitPct } : o)));
+    startTransition(async () => {
+      await updateChannelOwnerSplit(ownerId, splitPct);
+    });
+  }
+
+  function removeOwner(ownerId: number) {
+    setOwnerRows((prev) => prev.filter((o) => o.id !== ownerId));
+    startTransition(async () => {
+      await removeChannelOwner(ownerId);
+    });
+  }
+
   function toggleChannel(clientId: number, channelValue: string) {
     const existing = channelRows.find((ch) => ch.client_id === clientId && ch.channel === channelValue);
     if (!existing) {
@@ -172,7 +205,6 @@ export function ClientsManager({
             <EditClientForm
               key={client.id}
               client={client}
-              people={people}
               tiers={tiers}
               onSaved={(updated) => {
                 setClientRows((prev) => prev.map((c) => (c.id === client.id ? { ...c, ...updated } : c)));
@@ -288,6 +320,26 @@ export function ClientsManager({
                       );
                     })}
                   </div>
+                  {channelRows.some((ch) => ch.client_id === client.id && ch.is_active) && (
+                    <div className="mt-3 space-y-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-charcoal">
+                        Channel owners &amp; retainer split
+                      </span>
+                      {channelRows
+                        .filter((ch) => ch.client_id === client.id && ch.is_active)
+                        .map((ch) => (
+                          <ChannelOwnersEditor
+                            key={ch.id}
+                            channel={ch}
+                            owners={ownerRows.filter((o) => o.client_channel_id === ch.id)}
+                            people={people}
+                            onAdd={(profileId, splitPct) => addOwner(ch.id, profileId, splitPct)}
+                            onUpdateSplit={updateOwnerSplit}
+                            onRemove={removeOwner}
+                          />
+                        ))}
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
@@ -298,13 +350,96 @@ export function ClientsManager({
   );
 }
 
-function ClientFieldset({
+// A client's Digital "lead" is derived from these splits (whoever holds the
+// largest total percentage across the client's channels) rather than being
+// set directly — see buildDigitalOptiBoardData in lib/digitalOpti.ts.
+function ChannelOwnersEditor({
+  channel,
+  owners,
   people,
+  onAdd,
+  onUpdateSplit,
+  onRemove,
+}: {
+  channel: ChannelRow;
+  owners: ChannelOwnerRow[];
+  people: PersonOption[];
+  onAdd: (profileId: string, splitPct: number) => void;
+  onUpdateSplit: (ownerId: number, splitPct: number) => void;
+  onRemove: (ownerId: number) => void;
+}) {
+  const [newPersonId, setNewPersonId] = useState("");
+  const [newSplit, setNewSplit] = useState(100);
+  const availablePeople = people.filter((p) => !owners.some((o) => o.profile_id === p.id));
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-bg px-3 py-2 text-xs">
+      <span className="font-semibold uppercase tracking-wide text-charcoal">{channelLabel(channel.channel)}</span>
+      {owners.map((o) => (
+        <span key={o.id} className="flex items-center gap-1 rounded-full border border-border-c bg-white px-2 py-1">
+          {people.find((p) => p.id === o.profile_id)?.label ?? "Unknown"}
+          <input
+            type="number"
+            min={1}
+            max={100}
+            defaultValue={o.split_pct}
+            onBlur={(e) => {
+              const v = Number(e.target.value);
+              if (v > 0 && v <= 100) onUpdateSplit(o.id, v);
+            }}
+            className="w-12 rounded border border-border-c px-1 text-right"
+          />
+          %
+          <button type="button" onClick={() => onRemove(o.id)} className="text-red-600 hover:underline">
+            ×
+          </button>
+        </span>
+      ))}
+      {availablePeople.length > 0 && (
+        <>
+          <select
+            value={newPersonId}
+            onChange={(e) => setNewPersonId(e.target.value)}
+            className="rounded border border-border-c px-1.5 py-1"
+          >
+            <option value="">+ assign…</option>
+            {availablePeople.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={newSplit}
+            onChange={(e) => setNewSplit(Number(e.target.value))}
+            className="w-12 rounded border border-border-c px-1 text-right"
+          />
+          <button
+            type="button"
+            disabled={!newPersonId}
+            onClick={() => {
+              onAdd(newPersonId, newSplit);
+              setNewPersonId("");
+              setNewSplit(100);
+            }}
+            className="rounded border border-border-c px-2 py-1 font-semibold text-charcoal hover:border-gold/50 disabled:opacity-40"
+          >
+            Add
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ClientFieldset({
   tiers,
   values,
   onChange,
 }: {
-  people: PersonOption[];
   tiers: TierOption[];
   values: ClientRow;
   onChange: (updater: (v: ClientRow) => ClientRow) => void;
@@ -430,18 +565,6 @@ function ClientFieldset({
               </option>
             ))}
           </Select>
-          <Select
-            defaultValue={values.account_lead_id ?? ""}
-            className="w-40"
-            onChange={(e) => onChange((v) => ({ ...v, account_lead_id: e.target.value || null }))}
-          >
-            <option value="">Digital lead: none</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                Lead: {p.label}
-              </option>
-            ))}
-          </Select>
         </>
       )}
     </>
@@ -497,7 +620,7 @@ function AddClientForm({ tiers, onAdded }: { tiers: TierOption[]; onAdded: (c: C
       action={handleSubmit}
       className="flex flex-wrap items-end gap-2 rounded-xl border border-border-c bg-white p-4"
     >
-      <ClientFieldset people={[]} tiers={tiers} values={values} onChange={(updater) => setValues(updater)} />
+      <ClientFieldset tiers={tiers} values={values} onChange={(updater) => setValues(updater)} />
       <Button type="submit" disabled={pending}>
         {pending ? "Adding…" : "Add"}
       </Button>
@@ -511,13 +634,11 @@ function AddClientForm({ tiers, onAdded }: { tiers: TierOption[]; onAdded: (c: C
 
 function EditClientForm({
   client,
-  people,
   tiers,
   onSaved,
   onCancel,
 }: {
   client: ClientRow;
-  people: PersonOption[];
   tiers: TierOption[];
   onSaved: (updated: Partial<ClientRow>) => void;
   onCancel: () => void;
@@ -539,7 +660,7 @@ function EditClientForm({
     <Card>
       <form action={handleSubmit} className="flex flex-wrap items-end gap-2">
         <input type="hidden" name="id" value={client.id} />
-        <ClientFieldset people={people} tiers={tiers} values={values} onChange={(updater) => setValues(updater)} />
+        <ClientFieldset tiers={tiers} values={values} onChange={(updater) => setValues(updater)} />
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save"}
         </Button>

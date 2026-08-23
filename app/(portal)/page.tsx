@@ -41,16 +41,23 @@ export default async function DashboardPage() {
   // to this specific person (not a team-wide view). RLS already scopes
   // atl_client_assignees/digital_client_assignees rows to has_section, so
   // these simply come back empty for someone without ATL/Digital access.
-  const [{ data: atlAssignedRows }, { data: digitalLeadRows }, { data: digitalAssignedRows }] = await Promise.all([
+  const [{ data: atlAssignedRows }, { data: digitalOwnedChannelRows }, { data: digitalAssignedRows }] = await Promise.all([
     supabase.from("atl_client_assignees").select("client_id").eq("profile_id", profile.id),
-    supabase.from("clients").select("id").eq("account_lead_id", profile.id).eq("on_digital", true),
+    // "Lead" is derived from channel ownership now, not a plain client field —
+    // see buildDigitalOptiBoardData in lib/digitalOpti.ts.
+    supabase
+      .from("digital_channel_owners")
+      .select("channel:digital_client_channels(client_id)")
+      .eq("profile_id", profile.id),
     supabase.from("digital_client_assignees").select("client_id").eq("profile_id", profile.id),
   ]);
 
   const atlClientIds = Array.from(new Set((atlAssignedRows ?? []).map((r) => r.client_id)));
   const digitalClientIds = Array.from(
     new Set([
-      ...(digitalLeadRows ?? []).map((r) => r.id),
+      ...(digitalOwnedChannelRows ?? [])
+        .map((r) => (r.channel as unknown as { client_id: number } | null)?.client_id)
+        .filter((id): id is number => id != null),
       ...(digitalAssignedRows ?? []).map((r) => r.client_id),
     ]),
   );

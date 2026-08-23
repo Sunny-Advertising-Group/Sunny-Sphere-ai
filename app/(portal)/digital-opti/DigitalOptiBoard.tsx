@@ -12,15 +12,9 @@ import {
   type TeamSplitRow,
   type TierInfo,
 } from "@/lib/digitalOpti";
-import { logOpti, updateClientWipUrl, updateScheduleLabel } from "./actions";
+import { logOpti, unlogOpti, updateClientWipUrl, updateScheduleLabel } from "./actions";
 
 export type { ClientCardData, TeamSplitRow };
-
-// A low-alpha tint of the tier's colour, used as a card background band so
-// the tier reads at a glance without fighting the text for contrast.
-function tierTint(colour: string): string {
-  return `${colour}1A`;
-}
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -93,28 +87,29 @@ export function DigitalOptiBoard({
     setClientRows((prev) => prev.map((c) => (c.id !== clientId ? c : { ...c, wipDocUrl: url })));
   }
 
-  function tick(clientId: number, channelId: number) {
+  function setChannelDone(clientId: number, channelId: number, done: boolean) {
     setClientRows((prev) =>
       prev.map((c) =>
         c.id !== clientId
           ? c
-          : {
-              ...c,
-              channels: c.channels.map((ch) => (ch.id === channelId ? { ...ch, done: true } : ch)),
-            },
+          : { ...c, channels: c.channels.map((ch) => (ch.id === channelId ? { ...ch, done } : ch)) },
       ),
     );
+  }
+
+  function tick(clientId: number, channelId: number) {
+    setChannelDone(clientId, channelId, true);
     startTransition(async () => {
       const result = await logOpti(channelId);
-      if ((result as { error?: string })?.error) {
-        setClientRows((prev) =>
-          prev.map((c) =>
-            c.id !== clientId
-              ? c
-              : { ...c, channels: c.channels.map((ch) => (ch.id === channelId ? { ...ch, done: false } : ch)) },
-          ),
-        );
-      }
+      if ((result as { error?: string })?.error) setChannelDone(clientId, channelId, false);
+    });
+  }
+
+  function untick(clientId: number, channelId: number) {
+    setChannelDone(clientId, channelId, false);
+    startTransition(async () => {
+      const result = await unlogOpti(channelId);
+      if ((result as { error?: string })?.error) setChannelDone(clientId, channelId, true);
     });
   }
 
@@ -151,6 +146,7 @@ export function DigitalOptiBoard({
                 <th className="px-4 py-3">Team split</th>
                 <th className="px-4 py-3">Clients</th>
                 <th className="px-4 py-3">Retainer</th>
+                <th className="px-4 py-3">Channels</th>
               </tr>
             </thead>
             <tbody>
@@ -159,6 +155,7 @@ export function DigitalOptiBoard({
                   <td className="px-4 py-2.5 font-medium text-ink">{row.lead}</td>
                   <td className="px-4 py-2.5 text-charcoal">{row.clients}</td>
                   <td className="px-4 py-2.5 text-charcoal">{currency.format(row.retainer)}</td>
+                  <td className="px-4 py-2.5 text-charcoal">{row.channels}</td>
                 </tr>
               ))}
               <tr className="font-semibold text-ink">
@@ -166,6 +163,9 @@ export function DigitalOptiBoard({
                 <td className="px-4 py-2.5">{teamSplit.reduce((n, r) => n + r.clients, 0)}</td>
                 <td className="px-4 py-2.5">
                   {currency.format(teamSplit.reduce((n, r) => n + r.retainer, 0))}
+                </td>
+                <td className="px-4 py-2.5">
+                  {Math.round(teamSplit.reduce((n, r) => n + r.channels, 0) * 10) / 10}
                 </td>
               </tr>
             </tbody>
@@ -205,70 +205,93 @@ export function DigitalOptiBoard({
               ))}
             </div>
           )}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="flex flex-col gap-2">
           {filteredRows.map((client) => {
             const status = clientStatusMeta(client.status);
             return (
-              <Card key={client.id} style={client.tier ? { background: tierTint(client.tier.colour) } : undefined}>
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-3 w-3 flex-none rounded-full"
-                      style={{ background: client.colour || "#FDB600" }}
-                    />
-                    <span className="font-semibold text-ink">{client.name}</span>
-                    <WipBadge
-                      clientId={client.id}
-                      url={client.wipDocUrl}
-                      isAdmin={isAdmin}
-                      onSaved={(url) => setWipUrl(client.id, url)}
-                    />
-                    {client.tier && (
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
-                        style={{ background: client.tier.colour }}
-                      >
-                        {client.tier.name}
+              <div
+                key={client.id}
+                className="flex flex-wrap items-stretch gap-2 rounded-xl border border-border-c bg-white p-2"
+                style={client.tier ? { borderLeftColor: client.tier.colour, borderLeftWidth: 4 } : undefined}
+              >
+                <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-ink px-3 py-2 text-white">
+                  <span
+                    className="h-2.5 w-2.5 flex-none rounded-full"
+                    style={{ background: client.colour || "#FDB600" }}
+                  />
+                  <div className="flex flex-col leading-tight">
+                    {client.retainer != null && (
+                      <span className="text-[11px] font-semibold text-white/70">
+                        {currency.format(client.retainer)}
                       </span>
                     )}
+                    <span className="text-sm font-bold">{client.name}</span>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${status.className}`}>
-                    {status.label}
-                  </span>
+                  {client.tier && (
+                    <span
+                      className="ml-auto flex-none rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                      style={{ background: client.tier.colour }}
+                    >
+                      {client.tier.name}
+                    </span>
+                  )}
                 </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-charcoal">
-                  <span>{client.leadName ?? "Unassigned"}</span>
-                  {client.retainer != null && <span>· {currency.format(client.retainer)}</span>}
-                  <span className="rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-charcoal">
+
+                <div
+                  className={`flex flex-none items-center justify-center rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wide ${status.className}`}
+                  style={{ minWidth: 84 }}
+                >
+                  {status.label}
+                </div>
+
+                <div className="flex flex-none items-center rounded-lg border border-border-c px-3 py-2">
+                  <WipBadge
+                    clientId={client.id}
+                    url={client.wipDocUrl}
+                    isAdmin={isAdmin}
+                    onSaved={(url) => setWipUrl(client.id, url)}
+                  />
+                </div>
+
+                <div className="flex flex-none flex-col justify-center gap-0.5 rounded-lg border border-border-c px-3 py-2 text-xs">
+                  <span className="font-semibold text-ink">{client.leadName ?? "Unassigned"}</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-charcoal">
                     {cadenceLabel(client.cadence)}
                   </span>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="flex min-w-[220px] flex-1 flex-wrap items-center gap-1.5">
                   {client.channels.map((ch) => (
                     <button
                       key={ch.id}
                       type="button"
-                      disabled={ch.done}
-                      onClick={() => tick(client.id, ch.id)}
-                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left text-xs font-semibold text-ink transition-colors ${
+                      onClick={() => (ch.done ? untick(client.id, ch.id) : tick(client.id, ch.id))}
+                      title={ch.done ? "Click to undo this week's tick" : "Mark done for this period"}
+                      className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold text-ink transition-colors ${
                         ch.done
-                          ? "border-emerald-200 bg-emerald-50"
+                          ? "border-emerald-200 bg-emerald-50 hover:border-emerald-400"
                           : "border-border-c bg-white hover:border-gold/50"
                       }`}
                     >
                       <span
-                        className={`flex h-4 w-4 flex-none items-center justify-center rounded border ${
+                        className={`flex h-3.5 w-3.5 flex-none items-center justify-center rounded border ${
                           ch.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
                         }`}
                       >
                         {ch.done && "✓"}
                       </span>
-                      {channelLabel(ch.channel)}
+                      <span className="flex flex-col">
+                        {channelLabel(ch.channel)}
+                        {ch.owners.length > 0 && (
+                          <span className="text-[9px] font-medium normal-case text-charcoal/70">
+                            {ch.owners.map((o) => `${o.name} ${o.splitPct}%`).join(" · ")}
+                          </span>
+                        )}
+                      </span>
                     </button>
                   ))}
                 </div>
-              </Card>
+              </div>
             );
           })}
           </div>
