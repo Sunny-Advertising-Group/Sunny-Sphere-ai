@@ -122,24 +122,24 @@ export function DigitalOptiBoard({
   return (
     <div className="space-y-4 p-8">
       <div className="space-y-2">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="Week commencing" value={formatWeekCommencing()} />
           <ScheduleTile label={scheduleLabel} isAdmin={isAdmin} />
-          <Card className="p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">
+          <Card className="p-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">
               Optimisation completion
             </div>
-            <div className="mt-1 text-xl font-extrabold text-ink">{completionPct}%</div>
-            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-black/5">
+            <div className="mt-0.5 text-base font-extrabold text-ink">{completionPct}%</div>
+            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-black/5">
               <div className="h-full rounded-full bg-gold" style={{ width: `${completionPct}%` }} />
             </div>
-            <div className="mt-1 text-[11px] text-charcoal">
+            <div className="mt-1 text-[10px] text-charcoal">
               {totalDone} of {totalActive} due this period
             </div>
           </Card>
-          <Card className="p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Last updated</div>
-            <div className="mt-1 text-sm font-bold text-ink">
+          <Card className="p-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">Last updated</div>
+            <div className="mt-0.5 text-xs font-bold text-ink">
               {lastUpdatedAt ? <LiveRelativeTime iso={lastUpdatedAt} /> : "No optis logged yet"}
             </div>
           </Card>
@@ -233,37 +233,37 @@ export function DigitalOptiBoard({
             return (
               <div
                 key={client.id}
-                className="flex flex-wrap items-stretch gap-1.5 rounded-xl border border-border-c bg-white p-1.5"
+                className="flex flex-wrap items-stretch gap-1 rounded-xl border border-border-c bg-white p-1"
                 style={client.tier ? { borderLeftColor: client.tier.colour, borderLeftWidth: 4 } : undefined}
               >
-                <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-ink px-2.5 py-1.5 text-white">
-                  <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: "#FDB600" }} />
-                  <div className="flex flex-col leading-tight">
+                <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-ink px-2.5 py-1 text-white">
+                  <span className="h-2 w-2 flex-none rounded-full" style={{ background: "#FDB600" }} />
+                  <span className="text-sm font-bold">{client.name}</span>
+                  <div className="ml-auto flex flex-none items-center gap-1.5">
                     {client.retainer != null && (
                       <span className="text-[11px] font-semibold text-white/70">
                         {currency.format(client.retainer)}
                       </span>
                     )}
-                    <span className="text-sm font-bold">{client.name}</span>
+                    {client.tier && (
+                      <span
+                        className="flex-none rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                        style={{ background: client.tier.colour }}
+                      >
+                        {client.tier.name}
+                      </span>
+                    )}
                   </div>
-                  {client.tier && (
-                    <span
-                      className="ml-auto flex-none rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
-                      style={{ background: client.tier.colour }}
-                    >
-                      {client.tier.name}
-                    </span>
-                  )}
                 </div>
 
                 <div
-                  className={`flex flex-none items-center justify-center rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide ${status.className}`}
+                  className={`flex flex-none items-center justify-center rounded-lg px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${status.className}`}
                   style={{ minWidth: 84 }}
                 >
                   {status.label}
                 </div>
 
-                <div className="flex flex-none items-center rounded-lg border border-border-c px-3 py-1.5">
+                <div className="flex flex-none items-center rounded-lg border border-border-c px-3 py-1">
                   <WipBadge
                     clientId={client.id}
                     url={client.wipDocUrl}
@@ -272,7 +272,7 @@ export function DigitalOptiBoard({
                   />
                 </div>
 
-                <div className="flex flex-none flex-col justify-center gap-0.5 rounded-lg border border-border-c px-3 py-1.5 text-xs">
+                <div className="flex flex-none flex-col justify-center gap-0.5 rounded-lg border border-border-c px-3 py-1 text-xs">
                   <span className="font-semibold" style={{ color: "#CA8A04" }}>
                     {client.leadName ?? "Unassigned"}
                   </span>
@@ -282,14 +282,14 @@ export function DigitalOptiBoard({
                   </span>
                 </div>
 
-                <div className="flex min-w-[220px] flex-1 flex-wrap items-center gap-1.5">
+                <div className="flex min-w-[220px] flex-1 flex-wrap items-center gap-1">
                   {client.channels.map((ch) => (
                     <button
                       key={ch.id}
                       type="button"
                       onClick={() => (ch.done ? untick(client.id, ch.id) : tick(client.id, ch.id))}
                       title={ch.done ? "Click to undo this week's tick" : "Mark done for this period"}
-                      className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-left text-[11px] font-semibold text-ink transition-colors ${
+                      className={`flex items-center gap-1.5 rounded-lg border px-2 py-0.5 text-left text-[11px] font-semibold text-ink transition-colors ${
                         ch.done
                           ? "border-emerald-200 bg-emerald-50 hover:border-emerald-400"
                           : "border-border-c bg-white hover:border-gold/50"
@@ -325,9 +325,9 @@ export function DigitalOptiBoard({
 
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="p-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">{label}</div>
-      <div className="mt-1 text-sm font-bold text-ink">{value}</div>
+    <Card className="p-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">{label}</div>
+      <div className="mt-0.5 text-xs font-bold text-ink">{value}</div>
     </Card>
   );
 }
@@ -439,9 +439,9 @@ function ScheduleTile({ label, isAdmin }: { label: string | null; isAdmin: boole
 
   if (editing) {
     return (
-      <Card className="p-3">
+      <Card className="p-2">
         <form action={handleSubmit} className="space-y-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
           <Input name="schedule_label" defaultValue={label ?? ""} placeholder="e.g. PBR & BLUE" autoFocus />
           <div className="flex gap-2">
             <Button type="submit" disabled={pending}>
@@ -458,16 +458,16 @@ function ScheduleTile({ label, isAdmin }: { label: string | null; isAdmin: boole
   }
 
   return (
-    <Card className="p-3">
+    <Card className="p-2">
       <div className="flex items-start justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
         {isAdmin && (
           <button onClick={() => setEditing(true)} className="text-charcoal hover:text-gold" aria-label="Edit schedule">
             <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
           </button>
         )}
       </div>
-      <div className="mt-1 text-sm font-bold text-ink">{label || "—"}</div>
+      <div className="mt-0.5 text-xs font-bold text-ink">{label || "—"}</div>
     </Card>
   );
 }
