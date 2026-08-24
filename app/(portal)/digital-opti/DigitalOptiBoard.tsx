@@ -99,11 +99,11 @@ export function DigitalOptiBoard({
 
   function setChannelDone(clientId: number, channelId: number, done: boolean) {
     setClientRows((prev) =>
-      prev.map((c) =>
-        c.id !== clientId
-          ? c
-          : { ...c, channels: c.channels.map((ch) => (ch.id === channelId ? { ...ch, done } : ch)) },
-      ),
+      prev.map((c) => {
+        if (c.id !== clientId) return c;
+        const channels = c.channels.map((ch) => (ch.id === channelId ? { ...ch, done } : ch));
+        return { ...c, channels, allDone: channels.length > 0 && channels.every((ch) => ch.done) };
+      }),
     );
   }
 
