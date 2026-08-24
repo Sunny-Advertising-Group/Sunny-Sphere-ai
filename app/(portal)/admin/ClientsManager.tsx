@@ -517,10 +517,15 @@ function ClientFieldset({
   tiers,
   values,
   onChange,
+  originalRetainer,
 }: {
   tiers: TierOption[];
   values: ClientRow;
   onChange: (updater: (v: ClientRow) => ClientRow) => void;
+  // The retainer as it was before this edit — shown alongside the input so
+  // an admin can see what it's changing from, not just what they're typing.
+  // Omitted (undefined) when adding a brand-new client.
+  originalRetainer?: number | null;
 }) {
   return (
     <>
@@ -613,14 +618,21 @@ function ClientFieldset({
               </option>
             ))}
           </Select>
-          <Input
-            type="number"
-            step="0.01"
-            defaultValue={values.retainer ?? ""}
-            placeholder="Retainer $"
-            className="w-32"
-            onChange={(e) => onChange((v) => ({ ...v, retainer: e.target.value ? Number(e.target.value) : null }))}
-          />
+          <div className="flex flex-col gap-0.5">
+            {originalRetainer !== undefined && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-charcoal">
+                Currently {originalRetainer != null ? `$${originalRetainer.toLocaleString()}` : "none"}
+              </span>
+            )}
+            <Input
+              type="number"
+              step="0.01"
+              defaultValue={values.retainer ?? ""}
+              placeholder="Retainer $"
+              className="w-32"
+              onChange={(e) => onChange((v) => ({ ...v, retainer: e.target.value ? Number(e.target.value) : null }))}
+            />
+          </div>
           <Select
             defaultValue={values.digital_status ?? "active"}
             className="w-32"
@@ -738,7 +750,12 @@ function EditClientForm({
     <Card>
       <form action={handleSubmit} className="flex flex-wrap items-end gap-2">
         <input type="hidden" name="id" value={client.id} />
-        <ClientFieldset tiers={tiers} values={values} onChange={(updater) => setValues(updater)} />
+        <ClientFieldset
+          tiers={tiers}
+          values={values}
+          onChange={(updater) => setValues(updater)}
+          originalRetainer={client.retainer}
+        />
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save"}
         </Button>
