@@ -186,16 +186,16 @@ export async function updateClientWipUrl(clientId: number, url: string | null) {
   return { success: true };
 }
 
-// --- Admin: per-channel owners (who works this channel, and their share of
-// its retainer credit — the client's displayed "lead" is derived from this,
-// not stored directly) ---
+// --- Admin: per-channel owners (who's tagged as working this channel — no
+// percentage; see the digital_client_owners actions below for the retainer
+// split that actually drives the client's derived lead/second) ---
 
-export async function addChannelOwner(clientChannelId: number, profileId: string, splitPct: number) {
+export async function addChannelOwner(clientChannelId: number, profileId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("digital_channel_owners")
-    .insert({ client_channel_id: clientChannelId, profile_id: profileId, split_pct: splitPct })
-    .select("id, client_channel_id, profile_id, split_pct")
+    .insert({ client_channel_id: clientChannelId, profile_id: profileId })
+    .select("id, client_channel_id, profile_id")
     .single();
   if (error) return { error: error.message };
 
@@ -204,9 +204,9 @@ export async function addChannelOwner(clientChannelId: number, profileId: string
   return { success: true, owner: data };
 }
 
-export async function updateChannelOwnerSplit(ownerId: number, splitPct: number) {
+export async function removeChannelOwner(ownerId: number) {
   const supabase = await createClient();
-  const { error } = await supabase.from("digital_channel_owners").update({ split_pct: splitPct }).eq("id", ownerId);
+  const { error } = await supabase.from("digital_channel_owners").delete().eq("id", ownerId);
   if (error) return { error: error.message };
 
   revalidatePath("/digital-opti");
@@ -214,9 +214,37 @@ export async function updateChannelOwnerSplit(ownerId: number, splitPct: number)
   return { success: true };
 }
 
-export async function removeChannelOwner(ownerId: number) {
+// --- Admin: client-level retainer split (who's credited for this client's
+// revenue, and what share — this is what derives the lead/second shown on
+// the board and the Team split Retainer column) ---
+
+export async function addClientOwner(clientId: number, profileId: string, splitPct: number) {
   const supabase = await createClient();
-  const { error } = await supabase.from("digital_channel_owners").delete().eq("id", ownerId);
+  const { data, error } = await supabase
+    .from("digital_client_owners")
+    .insert({ client_id: clientId, profile_id: profileId, split_pct: splitPct })
+    .select("id, client_id, profile_id, split_pct")
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true, owner: data };
+}
+
+export async function updateClientOwnerSplit(ownerId: number, splitPct: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("digital_client_owners").update({ split_pct: splitPct }).eq("id", ownerId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function removeClientOwner(ownerId: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("digital_client_owners").delete().eq("id", ownerId);
   if (error) return { error: error.message };
 
   revalidatePath("/digital-opti");

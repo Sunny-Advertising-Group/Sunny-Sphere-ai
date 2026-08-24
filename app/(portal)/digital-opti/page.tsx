@@ -31,6 +31,7 @@ export default async function DigitalOptiPage() {
     { data: settings },
     { data: tiers },
     { data: scheduleRow },
+    { data: clientOwners },
   ] = await Promise.all([
     supabase
       .from("clients")
@@ -42,7 +43,7 @@ export default async function DigitalOptiPage() {
       .order("name"),
     supabase
       .from("digital_client_channels")
-      .select("id, client_id, channel, is_active, owners:digital_channel_owners(profile_id, split_pct, profile:profiles(full_name, email))")
+      .select("id, client_id, channel, is_active, owners:digital_channel_owners(profile_id, profile:profiles(full_name, email))")
       .eq("is_active", true),
     supabase
       .from("digital_opti_logs")
@@ -51,11 +52,20 @@ export default async function DigitalOptiPage() {
     supabase.from("digital_opti_settings").select("schedule_label").eq("id", 1).single(),
     supabase.from("client_tiers").select("id, name, colour, sort_order").order("sort_order"),
     supabase.from("digital_opti_schedule").select("tier_ids").eq("week_commencing", weekCommencingIso).maybeSingle(),
+    supabase.from("digital_client_owners").select("client_id, profile_id, split_pct, profile:profiles(full_name, email)"),
   ]);
 
   if (clientsError) console.error("[digital-opti] clients query failed:", clientsError);
   if (channelsError) console.error("[digital-opti] channels query failed:", channelsError);
   if (logsError) console.error("[digital-opti] logs query failed:", logsError);
+
+  const ownersByClient = new Map<number, { profileId: string; name: string; splitPct: number }[]>();
+  for (const o of clientOwners ?? []) {
+    const profile = o.profile as unknown as { full_name: string | null; email: string } | null;
+    const arr = ownersByClient.get(o.client_id) ?? [];
+    arr.push({ profileId: o.profile_id, name: profile?.full_name || profile?.email || "Unknown", splitPct: Number(o.split_pct) });
+    ownersByClient.set(o.client_id, arr);
+  }
 
   const clientInputs = (clients ?? []).map((client) => {
     const rawTier = client.tier as unknown as { id: number; name: string; colour: string; sort_order: number } | null;
@@ -69,6 +79,7 @@ export default async function DigitalOptiPage() {
       status: client.digital_status ?? "active",
       cadence: client.digital_cadence ?? "weekly",
       tier,
+      owners: ownersByClient.get(client.id) ?? [],
     };
   });
 
@@ -78,11 +89,7 @@ export default async function DigitalOptiPage() {
     channel: ch.channel,
     owners: (ch.owners ?? []).map((o) => {
       const profile = o.profile as unknown as { full_name: string | null; email: string } | null;
-      return {
-        profileId: o.profile_id,
-        name: profile?.full_name || profile?.email || "Unknown",
-        splitPct: Number(o.split_pct),
-      };
+      return { profileId: o.profile_id, name: profile?.full_name || profile?.email || "Unknown" };
     }),
   }));
 
