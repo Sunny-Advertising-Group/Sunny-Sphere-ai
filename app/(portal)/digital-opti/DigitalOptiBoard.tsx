@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { ExternalLink, Pencil } from "lucide-react";
 import { Button, Card, EmptyState, Input } from "@/components/ui";
 import {
-  cadenceLabel,
   channelLabel,
   clientStatusMeta,
   currentWeekCommencing,
@@ -278,9 +277,6 @@ export function DigitalOptiBoard({
                     {client.leadName ?? "Unassigned"}
                   </span>
                   {client.secondName && <span className="font-medium text-charcoal">{client.secondName}</span>}
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-charcoal">
-                    {cadenceLabel(client.cadence)}
-                  </span>
                 </div>
 
                 <div className="flex min-w-[220px] flex-1 flex-wrap items-center gap-1">
