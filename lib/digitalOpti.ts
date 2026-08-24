@@ -181,6 +181,13 @@ export type ClientCardData = ClientInput & {
   channels: ClientChannelCard[];
   leadName: string | null;
   secondName: string | null;
+  // Whether this client's tier is due for optimisation this week per the
+  // Black/Yellow/Blue rotation (always true for ungated tiers, or when no
+  // schedule row exists for the week at all).
+  dueThisWeek: boolean;
+  // True once every one of this client's active channels is ticked for its
+  // current period — lets the board highlight a fully-completed row.
+  allDone: boolean;
 };
 
 export type TeamSplitRow = { lead: string; clients: number; retainer: number; channels: number };
@@ -267,8 +274,9 @@ export function buildDigitalOptiBoardData(
     const rankedOwners = client.owners.slice().sort((a, b) => b.splitPct - a.splitPct);
     const leadName = rankedOwners[0]?.name ?? null;
     const secondName = rankedOwners[1]?.name ?? null;
+    const allDone = chans.length > 0 && chans.every((c) => c.done);
 
-    return { ...client, channels: chans, leadName, secondName };
+    return { ...client, channels: chans, leadName, secondName, dueThisWeek, allDone };
   });
 
   // Tiered hierarchy: untiered clients (sortOrder undefined) sort last,
