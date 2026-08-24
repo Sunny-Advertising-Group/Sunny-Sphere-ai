@@ -79,11 +79,15 @@ export function DigitalOptiBoard({
   const [myClientsOnly, setMyClientsOnly] = useState(false);
   const [, startTransition] = useTransition();
 
+  // Not every client is due every week — a client whose tier isn't in this
+  // week's Black/Yellow/Blue rotation simply doesn't appear on the board
+  // until its week comes back around.
+  const dueRows = useMemo(() => clientRows.filter((c) => c.dueThisWeek), [clientRows]);
   const usedTiers = useMemo(
-    () => tiers.filter((t) => clientRows.some((c) => c.tier?.id === t.id)),
-    [tiers, clientRows],
+    () => tiers.filter((t) => dueRows.some((c) => c.tier?.id === t.id)),
+    [tiers, dueRows],
   );
-  const filteredRows = clientRows
+  const filteredRows = dueRows
     .filter((c) => tierFilter === "all" || c.tier?.id === tierFilter)
     .filter(
       (c) => !myClientsOnly || c.channels.some((ch) => ch.owners.some((o) => o.profileId === myProfileId)),
@@ -233,7 +237,9 @@ export function DigitalOptiBoard({
             return (
               <div
                 key={client.id}
-                className="flex flex-wrap items-stretch gap-1 rounded-xl border border-border-c bg-white p-1"
+                className={`flex flex-wrap items-stretch gap-1 rounded-xl border p-1 transition-colors ${
+                  client.allDone ? "border-emerald-300 bg-emerald-50" : "border-border-c bg-white"
+                }`}
                 style={client.tier ? { borderLeftColor: client.tier.colour, borderLeftWidth: 4 } : undefined}
               >
                 <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-ink px-2.5 py-1 text-white">
