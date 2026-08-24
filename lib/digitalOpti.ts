@@ -26,6 +26,15 @@ export function channelLabel(channel: string): string {
   return CHANNEL_LABELS[channel] ?? channel;
 }
 
+// Compact display for a channel-owner tag — "Lily Hunter" -> "LH", a single
+// word (e.g. an email fallback) -> its first two characters.
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 // How often a client-channel needs an optimisation pass. Unlike ATL's cadence
 // (which measures staleness against a file's last-edit time), this cadence
 // defines the boundaries of the recurring period a tick counts toward.
@@ -131,14 +140,17 @@ export function lookbackIsoDate(days: number, now: Date): string {
 
 export type RawOptiLog = { client_channel_id: number; completed_at: string; voided_at: string | null };
 
-// Who works a channel, and what share of its retainer credit they hold.
-// Multiple owners on one channel (e.g. a lead + a second) split it between
-// them — splitPct values aren't required to sum to 100.
-export type ChannelOwnerInput = { profileId: string; name: string; splitPct: number };
+// Who is tagged as working a channel — display/organisational only, no
+// revenue attribution. See ClientOwnerInput for the retainer split.
+export type ChannelOwnerInput = { profileId: string; name: string };
 
 export type ChannelInput = { id: number; client_id: number; channel: string; owners: ChannelOwnerInput[] };
 
 export type TierInfo = { id: number; name: string; colour: string; sortOrder: number };
+
+// The retainer revenue split for a client, one entry per person credited on
+// it (e.g. lead 65%, second 35% — need not sum to 100).
+export type ClientOwnerInput = { profileId: string; name: string; splitPct: number };
 
 export type ClientInput = {
   id: number;
@@ -152,6 +164,7 @@ export type ClientInput = {
   // its own.
   cadence: string;
   tier: TierInfo | null;
+  owners: ClientOwnerInput[];
 };
 
 export type ClientChannelCard = {
@@ -163,8 +176,7 @@ export type ClientChannelCard = {
 };
 
 // leadName/secondName are derived, not stored — whoever holds the largest
-// and next-largest total split across the client's channels (see
-// buildDigitalOptiBoardData).
+// and next-largest split in `owners` (see buildDigitalOptiBoardData).
 export type ClientCardData = ClientInput & {
   channels: ClientChannelCard[];
   leadName: string | null;
@@ -226,7 +238,9 @@ export function buildDigitalOptiBoardData(
   let totalActive = 0;
   let totalDone = 0;
   let lastUpdatedAt: string | null = null;
-  const personWorkload = new Map<string, number>();
+  // Raw count of distinct channels each person is tagged on — "how many
+  // platforms are you actually executing on", unweighted by any split.
+  const channelCounts = new Map<string, number>();
 
   const clientCards: ClientCardData[] = clients.map((client) => {
     const dueThisWeek = isDueThisWeek(client.tier?.id, scheduledTierIds, activeTierIds);
@@ -243,23 +257,16 @@ export function buildDigitalOptiBoardData(
         }
         if (lastLogged && (!lastUpdatedAt || lastLogged > lastUpdatedAt)) lastUpdatedAt = lastLogged;
         for (const owner of ch.owners) {
-          personWorkload.set(owner.name, (personWorkload.get(owner.name) ?? 0) + owner.splitPct / 100);
+          channelCounts.set(owner.name, (channelCounts.get(owner.name) ?? 0) + 1);
         }
         return { id: ch.id, channel: ch.channel, done, lastLoggedAt: lastLogged, owners: ch.owners };
       });
 
     // Derived lead & second: whoever holds the largest (and next-largest)
-    // total split across this client's channels (ties keep whichever was
-    // seen first).
-    const splitTotals = new Map<string, number>();
-    for (const c of chans) {
-      for (const owner of c.owners) {
-        splitTotals.set(owner.name, (splitTotals.get(owner.name) ?? 0) + owner.splitPct);
-      }
-    }
-    const rankedOwners = Array.from(splitTotals.entries()).sort((a, b) => b[1] - a[1]);
-    const leadName = rankedOwners[0]?.[0] ?? null;
-    const secondName = rankedOwners[1]?.[0] ?? null;
+    // retainer split on this client (ties keep whichever was seen first).
+    const rankedOwners = client.owners.slice().sort((a, b) => b.splitPct - a.splitPct);
+    const leadName = rankedOwners[0]?.name ?? null;
+    const secondName = rankedOwners[1]?.name ?? null;
 
     return { ...client, channels: chans, leadName, secondName };
   });
@@ -271,21 +278,31 @@ export function buildDigitalOptiBoardData(
     return tierDiff !== 0 ? tierDiff : a.name.localeCompare(b.name);
   });
 
+  // Every owner on a client counts as a FULL client (a second is still "one
+  // of your accounts"), but only their split share of its retainer.
   const teamSplitMap = new Map<string, TeamSplitRow>();
   for (const client of clientCards) {
-    const key = client.leadName ?? "Unassigned";
-    const row = teamSplitMap.get(key) ?? { lead: key, clients: 0, retainer: 0, channels: 0 };
-    row.clients += 1;
-    row.retainer += client.retainer ?? 0;
-    teamSplitMap.set(key, row);
+    if (client.owners.length === 0) {
+      const row = teamSplitMap.get("Unassigned") ?? { lead: "Unassigned", clients: 0, retainer: 0, channels: 0 };
+      row.clients += 1;
+      row.retainer += client.retainer ?? 0;
+      teamSplitMap.set("Unassigned", row);
+      continue;
+    }
+    for (const owner of client.owners) {
+      const row = teamSplitMap.get(owner.name) ?? { lead: owner.name, clients: 0, retainer: 0, channels: 0 };
+      row.clients += 1;
+      row.retainer += (client.retainer ?? 0) * (owner.splitPct / 100);
+      teamSplitMap.set(owner.name, row);
+    }
   }
-  // Anyone with channel workload gets a row too, even if they're never the
-  // top-split "lead" of any client (e.g. a second who's spread thin).
-  for (const [name, workload] of personWorkload) {
+  // Anyone tagged on a channel gets a row too, even if they don't yet hold
+  // a retainer split on any client.
+  for (const [name, count] of channelCounts) {
     if (!teamSplitMap.has(name)) {
       teamSplitMap.set(name, { lead: name, clients: 0, retainer: 0, channels: 0 });
     }
-    teamSplitMap.get(name)!.channels = Math.round(workload * 10) / 10;
+    teamSplitMap.get(name)!.channels = count;
   }
   const teamSplit = Array.from(teamSplitMap.values()).sort((a, b) => b.retainer - a.retainer);
 

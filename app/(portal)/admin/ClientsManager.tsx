@@ -14,11 +14,13 @@ import {
 import {
   addChannelOwner,
   addClientChannel,
+  addClientOwner,
   addDigitalClientAssignee,
   removeChannelOwner,
+  removeClientOwner,
   removeDigitalClientAssignee,
   setClientChannelActive,
-  updateChannelOwnerSplit,
+  updateClientOwnerSplit,
 } from "../digital-opti/actions";
 import { Button, Card, EmptyState, Input, Select } from "@/components/ui";
 import { AssigneePicker, type PersonOption } from "@/components/AssigneePicker";
@@ -74,7 +76,9 @@ export type LinkRow = {
 
 export type ChannelRow = { id: number; client_id: number; channel: string; is_active: boolean };
 
-export type ChannelOwnerRow = { id: number; client_channel_id: number; profile_id: string; split_pct: number };
+export type ChannelOwnerRow = { id: number; client_channel_id: number; profile_id: string };
+
+export type ClientOwnerRow = { id: number; client_id: number; profile_id: string; split_pct: number };
 
 export function ClientsManager({
   clients,
@@ -83,6 +87,7 @@ export function ClientsManager({
   atlAssigneesByClient,
   digitalAssigneesByClient,
   channelOwners,
+  clientOwners,
   people,
   tiers,
 }: {
@@ -92,6 +97,7 @@ export function ClientsManager({
   atlAssigneesByClient: Record<number, string[]>;
   digitalAssigneesByClient: Record<number, string[]>;
   channelOwners: ChannelOwnerRow[];
+  clientOwners: ClientOwnerRow[];
   people: PersonOption[];
   tiers: TierOption[];
 }) {
@@ -99,6 +105,7 @@ export function ClientsManager({
   const [linkRows, setLinkRows] = useState(links);
   const [channelRows, setChannelRows] = useState(channels);
   const [ownerRows, setOwnerRows] = useState(channelOwners);
+  const [clientOwnerRows, setClientOwnerRows] = useState(clientOwners);
   const [atlAssignments, setAtlAssignments] = useState(atlAssigneesByClient);
   const [digitalAssignments, setDigitalAssignments] = useState(digitalAssigneesByClient);
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
@@ -149,21 +156,14 @@ export function ClientsManager({
     });
   }
 
-  function addOwner(clientChannelId: number, profileId: string, splitPct: number) {
+  function addOwner(clientChannelId: number, profileId: string) {
     const tempId = nextTempId();
-    setOwnerRows((prev) => [...prev, { id: tempId, client_channel_id: clientChannelId, profile_id: profileId, split_pct: splitPct }]);
+    setOwnerRows((prev) => [...prev, { id: tempId, client_channel_id: clientChannelId, profile_id: profileId }]);
     startTransition(async () => {
-      const result = await addChannelOwner(clientChannelId, profileId, splitPct);
+      const result = await addChannelOwner(clientChannelId, profileId);
       const created = (result as { owner?: ChannelOwnerRow } | undefined)?.owner;
       if (created) setOwnerRows((prev) => prev.map((o) => (o.id === tempId ? created : o)));
       else setOwnerRows((prev) => prev.filter((o) => o.id !== tempId));
-    });
-  }
-
-  function updateOwnerSplit(ownerId: number, splitPct: number) {
-    setOwnerRows((prev) => prev.map((o) => (o.id === ownerId ? { ...o, split_pct: splitPct } : o)));
-    startTransition(async () => {
-      await updateChannelOwnerSplit(ownerId, splitPct);
     });
   }
 
@@ -171,6 +171,31 @@ export function ClientsManager({
     setOwnerRows((prev) => prev.filter((o) => o.id !== ownerId));
     startTransition(async () => {
       await removeChannelOwner(ownerId);
+    });
+  }
+
+  function addClientOwnerSplit(clientId: number, profileId: string, splitPct: number) {
+    const tempId = nextTempId();
+    setClientOwnerRows((prev) => [...prev, { id: tempId, client_id: clientId, profile_id: profileId, split_pct: splitPct }]);
+    startTransition(async () => {
+      const result = await addClientOwner(clientId, profileId, splitPct);
+      const created = (result as { owner?: ClientOwnerRow } | undefined)?.owner;
+      if (created) setClientOwnerRows((prev) => prev.map((o) => (o.id === tempId ? created : o)));
+      else setClientOwnerRows((prev) => prev.filter((o) => o.id !== tempId));
+    });
+  }
+
+  function updateClientOwnerSplitPct(ownerId: number, splitPct: number) {
+    setClientOwnerRows((prev) => prev.map((o) => (o.id === ownerId ? { ...o, split_pct: splitPct } : o)));
+    startTransition(async () => {
+      await updateClientOwnerSplit(ownerId, splitPct);
+    });
+  }
+
+  function removeClientOwnerSplit(ownerId: number) {
+    setClientOwnerRows((prev) => prev.filter((o) => o.id !== ownerId));
+    startTransition(async () => {
+      await removeClientOwner(ownerId);
     });
   }
 
@@ -300,6 +325,15 @@ export function ClientsManager({
                       onRemove={(profileId) => unassignDigital(client.id, profileId)}
                     />
                   </div>
+                  <div className="mb-3">
+                    <ClientRetainerSplitEditor
+                      owners={clientOwnerRows.filter((o) => o.client_id === client.id)}
+                      people={people}
+                      onAdd={(profileId, splitPct) => addClientOwnerSplit(client.id, profileId, splitPct)}
+                      onUpdateSplit={updateClientOwnerSplitPct}
+                      onRemove={removeClientOwnerSplit}
+                    />
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {CHANNEL_OPTIONS.map((c) => {
                       const existing = channelRows.find((ch) => ch.client_id === client.id && ch.channel === c.value);
@@ -323,7 +357,7 @@ export function ClientsManager({
                   {channelRows.some((ch) => ch.client_id === client.id && ch.is_active) && (
                     <div className="mt-3 space-y-2">
                       <span className="text-xs font-semibold uppercase tracking-wide text-charcoal">
-                        Channel owners &amp; retainer split
+                        Channel owners (who works it — no % here)
                       </span>
                       {channelRows
                         .filter((ch) => ch.client_id === client.id && ch.is_active)
@@ -333,8 +367,7 @@ export function ClientsManager({
                             channel={ch}
                             owners={ownerRows.filter((o) => o.client_channel_id === ch.id)}
                             people={people}
-                            onAdd={(profileId, splitPct) => addOwner(ch.id, profileId, splitPct)}
-                            onUpdateSplit={updateOwnerSplit}
+                            onAdd={(profileId) => addOwner(ch.id, profileId)}
                             onRemove={removeOwner}
                           />
                         ))}
@@ -350,19 +383,64 @@ export function ClientsManager({
   );
 }
 
-// A client's Digital "lead" is derived from these splits (whoever holds the
-// largest total percentage across the client's channels) rather than being
-// set directly — see buildDigitalOptiBoardData in lib/digitalOpti.ts.
+// Who's tagged as working this channel — no percentage. See
+// ClientRetainerSplitEditor for the client-level split that actually drives
+// the derived lead/second and Team split Retainer column.
 function ChannelOwnersEditor({
   channel,
+  owners,
+  people,
+  onAdd,
+  onRemove,
+}: {
+  channel: ChannelRow;
+  owners: ChannelOwnerRow[];
+  people: PersonOption[];
+  onAdd: (profileId: string) => void;
+  onRemove: (ownerId: number) => void;
+}) {
+  const availablePeople = people.filter((p) => !owners.some((o) => o.profile_id === p.id));
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-bg px-3 py-2 text-xs">
+      <span className="font-semibold uppercase tracking-wide text-charcoal">{channelLabel(channel.channel)}</span>
+      {owners.map((o) => (
+        <span key={o.id} className="flex items-center gap-1 rounded-full border border-border-c bg-white px-2 py-1">
+          {people.find((p) => p.id === o.profile_id)?.label ?? "Unknown"}
+          <button type="button" onClick={() => onRemove(o.id)} className="text-red-600 hover:underline">
+            ×
+          </button>
+        </span>
+      ))}
+      {availablePeople.length > 0 && (
+        <select
+          value=""
+          onChange={(e) => e.target.value && onAdd(e.target.value)}
+          className="rounded border border-border-c px-1.5 py-1"
+        >
+          <option value="">+ assign…</option>
+          {availablePeople.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
+// The client-level retainer split — who's credited for this client's
+// revenue, and what share. This is what derives the board's lead/second and
+// the Team split Retainer column, distinct from the per-channel tags above.
+function ClientRetainerSplitEditor({
   owners,
   people,
   onAdd,
   onUpdateSplit,
   onRemove,
 }: {
-  channel: ChannelRow;
-  owners: ChannelOwnerRow[];
+  owners: ClientOwnerRow[];
   people: PersonOption[];
   onAdd: (profileId: string, splitPct: number) => void;
   onUpdateSplit: (ownerId: number, splitPct: number) => void;
@@ -373,8 +451,8 @@ function ChannelOwnersEditor({
   const availablePeople = people.filter((p) => !owners.some((o) => o.profile_id === p.id));
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-bg px-3 py-2 text-xs">
-      <span className="font-semibold uppercase tracking-wide text-charcoal">{channelLabel(channel.channel)}</span>
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gold/30 bg-gold/5 px-3 py-2 text-xs">
+      <span className="font-semibold uppercase tracking-wide text-charcoal">Retainer split</span>
       {owners.map((o) => (
         <span key={o.id} className="flex items-center gap-1 rounded-full border border-border-c bg-white px-2 py-1">
           {people.find((p) => p.id === o.profile_id)?.label ?? "Unknown"}

@@ -8,6 +8,7 @@ import {
   channelLabel,
   clientStatusMeta,
   currentWeekCommencing,
+  initials,
   type ClientCardData,
   type TeamSplitRow,
   type TierInfo,
@@ -302,11 +303,11 @@ export function DigitalOptiBoard({
                       >
                         {ch.done && "✓"}
                       </span>
-                      <span className="flex flex-col">
+                      <span className="flex items-center gap-1">
                         {channelLabel(ch.channel)}
                         {ch.owners.length > 0 && (
-                          <span className="text-[9px] font-medium normal-case text-charcoal/70">
-                            {ch.owners.map((o) => `${o.name} ${o.splitPct}%`).join(" · ")}
+                          <span className="text-[9px] font-semibold normal-case text-charcoal/70">
+                            {ch.owners.map((o) => initials(o.name)).join(" ")}
                           </span>
                         )}
                       </span>

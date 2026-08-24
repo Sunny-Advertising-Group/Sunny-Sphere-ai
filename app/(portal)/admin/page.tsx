@@ -63,6 +63,7 @@ export default async function AdminPage({
     { data: digitalChannels },
     { data: digitalAssignees },
     { data: channelOwners },
+    { data: clientOwners },
     { data: rawOptiLogs },
     { data: tiers },
   ] = await Promise.all([
@@ -113,7 +114,8 @@ export default async function AdminPage({
     supabase.from("atl_client_assignees").select("client_id, profile_id"),
     supabase.from("digital_client_channels").select("id, client_id, channel, is_active"),
     supabase.from("digital_client_assignees").select("client_id, profile_id"),
-    supabase.from("digital_channel_owners").select("id, client_channel_id, profile_id, split_pct"),
+    supabase.from("digital_channel_owners").select("id, client_channel_id, profile_id"),
+    supabase.from("digital_client_owners").select("id, client_id, profile_id, split_pct"),
     supabase
       .from("digital_opti_logs")
       .select(
@@ -281,6 +283,7 @@ export default async function AdminPage({
           atlAssigneesByClient={atlAssigneesByClient}
           digitalAssigneesByClient={digitalAssigneesByClient}
           channelOwners={channelOwners ?? []}
+          clientOwners={clientOwners ?? []}
           people={personOptions}
           tiers={tiers ?? []}
         />
