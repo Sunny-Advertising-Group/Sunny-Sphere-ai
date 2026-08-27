@@ -17,6 +17,7 @@ import {
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { PageHeader } from "@/components/ui";
 import { SectionCardGrid, type SectionCardDef } from "@/components/SectionCardGrid";
 import type { PersonOption } from "@/components/AssigneePicker";
@@ -29,6 +30,7 @@ import { PublishedTipsList } from "./PublishedTipsList";
 import { RequestsInbox } from "./RequestsInbox";
 import { TicketsInbox } from "./TicketsInbox";
 import { PeopleTable, type Person } from "./PeopleTable";
+import { TwoFactorSetup } from "./TwoFactorSetup";
 import { ResourceList } from "./ResourceList";
 import { ClientsManager } from "./ClientsManager";
 import { DigitalOptiLogViewer, type OptiLogRow } from "./DigitalOptiLogViewer";
@@ -133,6 +135,15 @@ export default async function AdminPage({
     grantsByUser.set(g.user_id, list);
   }
 
+  const { data: mfaData } = await supabase.auth.mfa.listFactors();
+  const hasTotp = (mfaData?.totp ?? []).some((f) => f.status === "verified");
+
+  const admin = createAdminClient();
+  const { data: authUsersData } = await admin.auth.admin.listUsers({ perPage: 200 });
+  const lastSignInById = new Map(
+    (authUsersData?.users ?? []).map((u) => [u.id, u.last_sign_in_at ?? null]),
+  );
+
   const people: Person[] = (profiles ?? []).map((p) => ({
     id: p.id,
     email: p.email,
@@ -140,6 +151,7 @@ export default async function AdminPage({
     team: p.team,
     role: p.role,
     grantedSections: grantsByUser.get(p.id) ?? [],
+    lastSignInAt: lastSignInById.get(p.id) ?? null,
   }));
 
   const personOptions: PersonOption[] = (profiles ?? []).map((p) => ({
@@ -299,7 +311,12 @@ export default async function AdminPage({
       id: "people",
       title: "People & access",
       icon: <Users className="h-5 w-5" strokeWidth={2} aria-hidden />,
-      content: <PeopleTable people={people} />,
+      content: (
+        <>
+          <TwoFactorSetup hasTotp={hasTotp} />
+          <PeopleTable people={people} currentUserId={visibility.profile.id} />
+        </>
+      ),
     },
   ];
 
