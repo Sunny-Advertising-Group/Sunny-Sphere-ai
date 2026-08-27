@@ -54,6 +54,29 @@ export async function inviteMember(_prevState: unknown, formData: FormData) {
   return { success: `Invite link ready for ${email}.`, inviteLink: data.properties?.action_link };
 }
 
+export async function resendInviteLink(userId: string) {
+  const { isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+
+  const admin = createAdminClient();
+  const { data: userData, error: userError } = await admin.auth.admin.getUserById(userId);
+  if (userError || !userData?.user?.email) {
+    return { error: userError?.message || "User not found." };
+  }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+  // "recovery" (not "invite") because the user's auth.users row already exists from the
+  // first invite — GoTrue's invite type is only for brand-new users.
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email: userData.user.email,
+    options: { redirectTo: `${siteUrl}/invite` },
+  });
+  if (error) return { error: error.message };
+
+  return { success: `Fresh link ready for ${userData.user.email}.`, inviteLink: data.properties?.action_link };
+}
+
 export async function reviewTool(toolId: number, status: "published" | "rejected") {
   const { supabase, user, isAdmin } = await requireAdmin();
   if (!user || !isAdmin) return { error: "Not authorized." };
@@ -177,6 +200,94 @@ export async function revokeSection(userId: string, section: string) {
     .eq("user_id", userId)
     .eq("section", section);
   if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function enrollTotp() {
+  const { supabase, user, isAdmin } = await requireAdmin();
+  if (!user || !isAdmin) return { error: "Not authorized." };
+
+  const { data, error } = await supabase.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: `Sunny Sphere — ${new Date().toISOString()}`,
+  });
+  if (error) return { error: error.message };
+
+  return { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret };
+}
+
+export async function verifyTotpEnrollment(factorId: string, code: string) {
+  const { supabase, user, isAdmin } = await requireAdmin();
+  if (!user || !isAdmin) return { error: "Not authorized." };
+
+  const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId });
+  if (challengeError) return { error: challengeError.message };
+
+  const { error: verifyError } = await supabase.auth.mfa.verify({
+    factorId,
+    challengeId: challenge.id,
+    code: code.trim(),
+  });
+  if (verifyError) return { error: "Invalid code. Try again." };
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function unenrollTotp() {
+  const { supabase, user, isAdmin } = await requireAdmin();
+  if (!user || !isAdmin) return { error: "Not authorized." };
+
+  const { data, error } = await supabase.auth.mfa.listFactors();
+  if (error) return { error: error.message };
+
+  const factor = data?.totp?.[0];
+  if (!factor) return { success: true };
+
+  const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+  if (unenrollError) return { error: unenrollError.message };
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+// Removing a person is permanent (their login and profile are both deleted), so it's
+// gated behind a live TOTP code from the acting admin's own authenticator app —
+// on top of the requireAdmin() role check every other action here relies on.
+export async function removeMember(userId: string, code: string) {
+  const { supabase, user, isAdmin } = await requireAdmin();
+  if (!user || !isAdmin) return { error: "Not authorized." };
+  if (userId === user.id) return { error: "You can't remove your own account." };
+
+  if (!code || code.trim().length !== 6) {
+    return { error: "Enter the 6-digit code from your authenticator app." };
+  }
+
+  const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+  if (factorsError) return { error: factorsError.message };
+
+  const totpFactor = factors?.totp?.find((f) => f.status === "verified");
+  if (!totpFactor) {
+    return { error: "Set up two-factor authentication above before removing someone." };
+  }
+
+  const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+    factorId: totpFactor.id,
+  });
+  if (challengeError) return { error: challengeError.message };
+
+  const { error: verifyError } = await supabase.auth.mfa.verify({
+    factorId: totpFactor.id,
+    challengeId: challenge.id,
+    code: code.trim(),
+  });
+  if (verifyError) return { error: "Invalid code. Try again." };
+
+  const admin = createAdminClient();
+  const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
+  if (deleteError) return { error: deleteError.message };
 
   revalidatePath("/admin");
   return { success: true };
