@@ -14,6 +14,7 @@ export type Tool = {
   how_to_use: string | null;
   link_url: string | null;
   file_path: string | null;
+  colour: string | null;
   status: string;
   use_count: number | null;
   owner_id: string | null;
@@ -75,7 +76,14 @@ export function ToolsBrowser({ tools, isOwnerView }: { tools: Tool[]; isOwnerVie
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((tool) => (
               <button key={tool.id} onClick={() => setSelected(tool)} className="text-left">
-                <Card className="h-full transition-colors hover:border-gold/50">
+                <Card
+                  className="h-full transition-colors hover:border-gold/50"
+                  style={
+                    tool.colour
+                      ? { borderLeft: `4px solid ${tool.colour}`, background: `${tool.colour}14` }
+                      : undefined
+                  }
+                >
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <Pill tone="gold">{tool.tool_type}</Pill>
                     {tool.status !== "published" && <Pill tone="muted">{tool.status}</Pill>}
@@ -119,7 +127,11 @@ function ToolModal({ tool, onClose }: { tool: Tool; onClose: () => void }) {
       onClick={onClose}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6"
     >
-      <div onClick={(e) => e.stopPropagation()} className="relative w-full max-w-lg rounded-2xl bg-white p-8 shadow-xl">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-lg rounded-2xl bg-white p-8 shadow-xl"
+        style={tool.colour ? { borderTop: `4px solid ${tool.colour}` } : undefined}
+      >
         <button onClick={onClose} className="absolute right-4 top-4 text-charcoal hover:text-ink" aria-label="Close">
           <X className="h-4 w-4" strokeWidth={2} />
         </button>

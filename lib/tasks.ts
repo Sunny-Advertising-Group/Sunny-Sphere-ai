@@ -31,12 +31,30 @@ export type TaskRow = {
   description: string | null;
   due_date: string | null;
   links: TaskLink[];
+  client_id: number | null;
   created_by: string | null;
+  assigned_to: string | null;
   assigned_by: string | null;
   position: number;
   completed_at: string | null;
   created_at: string;
 };
+
+export type ClientLite = { id: number; name: string; colour: string | null };
+
+export type ChecklistItem = {
+  id: number;
+  task_id: number;
+  title: string;
+  due_date: string | null;
+  completed: boolean;
+  position: number;
+  created_at: string;
+};
+
+export function checklistProgress(items: ChecklistItem[]): { done: number; total: number } {
+  return { done: items.filter((i) => i.completed).length, total: items.length };
+}
 
 export type CategoryRow = {
   id: number;
@@ -56,10 +74,19 @@ export type CategoryWithTasks = CategoryRow & { tasks: TaskRow[] };
 // soonest/undated-last), and split off anything completed within the last 14
 // days as history (older completed rows are purged by the cleanup cron, so
 // nothing here needs a lower bound).
+//
+// A tagged task keeps living in whichever of its creator's own columns they
+// filed it under (task.category_id never changes) — it only *displays* a
+// second time, under the tagged person's "Tagged Tasks" system category,
+// when task.assigned_to matches that board's owner. `tasks` passed in
+// already includes both this board's native tasks and any tagged-elsewhere
+// tasks assigned to it (see the page's task query).
 export function groupTasksByCategory(
   categories: CategoryRow[],
   tasks: TaskRow[],
 ): { active: CategoryWithTasks[]; completed: TaskRow[] } {
+  const categoryIds = new Set(categories.map((c) => c.id));
+  const systemCategory = categories.find((c) => c.is_system);
   const byCategory = new Map<number, TaskRow[]>();
   const completed: TaskRow[] = [];
 
@@ -68,9 +95,14 @@ export function groupTasksByCategory(
       completed.push(task);
       continue;
     }
-    const arr = byCategory.get(task.category_id) ?? [];
+    const displayCategoryId =
+      !categoryIds.has(task.category_id) && systemCategory && task.assigned_to === systemCategory.owner_id
+        ? systemCategory.id
+        : task.category_id;
+    if (!categoryIds.has(displayCategoryId)) continue;
+    const arr = byCategory.get(displayCategoryId) ?? [];
     arr.push(task);
-    byCategory.set(task.category_id, arr);
+    byCategory.set(displayCategoryId, arr);
   }
 
   const dueRank = (t: TaskRow) => (t.due_date ? new Date(t.due_date).getTime() : Infinity);

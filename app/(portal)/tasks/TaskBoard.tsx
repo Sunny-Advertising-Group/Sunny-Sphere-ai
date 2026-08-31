@@ -6,22 +6,26 @@ import {
   AlignLeft,
   Calendar,
   Check,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
   Link2,
   List as ListIcon,
-  Pencil,
+  Palette,
   Plus,
+  Share2,
   Tag,
   Trash2,
   X,
 } from "lucide-react";
+import { AssigneePicker } from "@/components/AssigneePicker";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
 import { initials } from "@/lib/digitalOpti";
 import {
   CATEGORY_COLORS,
   categoryColorMeta,
+  checklistProgress,
   DEFAULT_CATEGORY_COLOR,
   formatDueDate,
   groupTasksByCategory,
@@ -29,47 +33,133 @@ import {
   personLabel,
   type CategoryColorKey,
   type CategoryRow,
+  type ChecklistItem,
+  type ClientLite,
   type PersonLite,
   type TaskLink,
   type TaskRow,
 } from "@/lib/tasks";
 import {
+  addChecklistItem,
   completeTask,
   createCategory,
   createTask,
   deleteCategory,
+  deleteChecklistItem,
   deleteTask,
+  grantBoardAccess,
   moveCategory,
   recolorCategory,
   renameCategory,
+  revokeBoardAccess,
+  toggleChecklistItem,
   uncompleteTask,
+  updateChecklistItem,
   updateTask,
 } from "./actions";
 
 type View = "card" | "list";
 
 export function TaskBoard({
-  people,
+  allPeople,
+  viewablePeople,
+  grantedPeople: initialGrantedPeople,
+  clients,
   myProfileId,
   boardOwnerId,
   categories: initialCategories,
   tasks: initialTasks,
+  checklistItems: initialChecklistItems,
 }: {
-  people: PersonLite[];
+  allPeople: PersonLite[];
+  viewablePeople: PersonLite[];
+  grantedPeople: PersonLite[];
+  clients: ClientLite[];
   myProfileId: string;
   boardOwnerId: string;
   categories: CategoryRow[];
   tasks: TaskRow[];
+  checklistItems: ChecklistItem[];
 }) {
   const [categories, setCategories] = useState(initialCategories);
   const [tasks, setTasks] = useState(initialTasks);
+  const [checklistItems, setChecklistItems] = useState(initialChecklistItems);
+  const [grantedPeople, setGrantedPeople] = useState(initialGrantedPeople);
   const [view, setView] = useState<View>("card");
+  const [shareOpen, setShareOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   const isOwnBoard = boardOwnerId === myProfileId;
-  const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  const peopleById = useMemo(() => new Map(allPeople.map((p) => [p.id, p])), [allPeople]);
   const boardOwner = peopleById.get(boardOwnerId);
+
+  const checklistByTask = useMemo(() => {
+    const map = new Map<number, ChecklistItem[]>();
+    for (const item of checklistItems) {
+      const arr = map.get(item.task_id) ?? [];
+      arr.push(item);
+      map.set(item.task_id, arr);
+    }
+    for (const arr of map.values()) arr.sort((a, b) => a.position - b.position);
+    return map;
+  }, [checklistItems]);
+
+  function addChecklistItemLocal(taskId: number, title: string, dueDate: string | null) {
+    const tempId = -Date.now();
+    const optimistic: ChecklistItem = {
+      id: tempId,
+      task_id: taskId,
+      title,
+      due_date: dueDate,
+      completed: false,
+      position: (checklistByTask.get(taskId)?.length ?? 0),
+      created_at: new Date().toISOString(),
+    };
+    setChecklistItems((prev) => [...prev, optimistic]);
+    startTransition(async () => {
+      const result = await addChecklistItem(taskId, title, dueDate);
+      if (result?.error) {
+        setChecklistItems((prev) => prev.filter((i) => i.id !== tempId));
+        report(result);
+      } else if (result?.item) {
+        setChecklistItems((prev) => prev.map((i) => (i.id === tempId ? (result.item as ChecklistItem) : i)));
+      }
+    });
+  }
+
+  function toggleChecklistItemLocal(id: number, completed: boolean) {
+    setChecklistItems((prev) => prev.map((i) => (i.id === id ? { ...i, completed } : i)));
+    startTransition(async () => report(await toggleChecklistItem(id, completed)));
+  }
+
+  function updateChecklistItemLocal(id: number, fields: { title?: string; dueDate?: string | null }) {
+    setChecklistItems((prev) =>
+      prev.map((i) =>
+        i.id === id
+          ? { ...i, ...(fields.title !== undefined ? { title: fields.title } : {}), ...(fields.dueDate !== undefined ? { due_date: fields.dueDate } : {}) }
+          : i,
+      ),
+    );
+    startTransition(async () => report(await updateChecklistItem(id, fields)));
+  }
+
+  function deleteChecklistItemLocal(id: number) {
+    setChecklistItems((prev) => prev.filter((i) => i.id !== id));
+    startTransition(async () => report(await deleteChecklistItem(id)));
+  }
+
+  function addGrant(viewerId: string) {
+    const person = allPeople.find((p) => p.id === viewerId);
+    if (!person) return;
+    setGrantedPeople((prev) => [...prev, person]);
+    startTransition(async () => report(await grantBoardAccess(viewerId)));
+  }
+
+  function removeGrant(viewerId: string) {
+    setGrantedPeople((prev) => prev.filter((p) => p.id !== viewerId));
+    startTransition(async () => report(await revokeBoardAccess(viewerId)));
+  }
 
   const { active, completed } = useMemo(() => groupTasksByCategory(categories, tasks), [categories, tasks]);
 
@@ -138,28 +228,26 @@ export function TaskBoard({
     dueDate: string | null;
     description: string;
     links: TaskLink[];
+    clientId: number | null;
   }) {
     const tempId = -Date.now();
-    const targetCategoryId =
-      assigneeId && assigneeId !== myProfileId
-        ? categories.find((c) => c.owner_id === assigneeId && c.is_system)?.id ?? categoryId
-        : categoryId;
+    const tagged = !!assigneeId && assigneeId !== myProfileId;
     const optimistic: TaskRow = {
       id: tempId,
-      category_id: targetCategoryId,
+      category_id: categoryId,
       title: input.title,
       description: input.description || null,
       due_date: input.dueDate,
       links: input.links,
+      client_id: input.clientId,
       created_by: myProfileId,
-      assigned_by: assigneeId && assigneeId !== myProfileId ? myProfileId : null,
+      assigned_to: tagged ? assigneeId : null,
+      assigned_by: tagged ? myProfileId : null,
       position: 0,
       completed_at: null,
       created_at: new Date().toISOString(),
     };
-    if (targetCategoryId === categoryId || isOwnBoard) {
-      setTasks((prev) => [...prev, optimistic]);
-    }
+    setTasks((prev) => [...prev, optimistic]);
     startTransition(async () => {
       const result = await createTask({
         categoryId,
@@ -168,15 +256,13 @@ export function TaskBoard({
         description: input.description,
         dueDate: input.dueDate,
         links: input.links,
+        clientId: input.clientId,
       });
       if (result?.error) {
         setTasks((prev) => prev.filter((t) => t.id !== tempId));
         report(result);
       } else if (result?.task) {
-        setTasks((prev) => {
-          const withoutTemp = prev.filter((t) => t.id !== tempId);
-          return targetCategoryId === categoryId || isOwnBoard ? [...withoutTemp, result.task as TaskRow] : withoutTemp;
-        });
+        setTasks((prev) => prev.map((t) => (t.id === tempId ? (result.task as TaskRow) : t)));
       }
     });
   }
@@ -194,10 +280,32 @@ export function TaskBoard({
     startTransition(async () => report(await deleteTask(id)));
   }
 
-  function saveTask(id: number, fields: { title: string; description: string; dueDate: string | null; links: TaskLink[] }) {
+  function saveTask(
+    id: number,
+    fields: {
+      title: string;
+      description: string;
+      dueDate: string | null;
+      links: TaskLink[];
+      clientId: number | null;
+      assigneeId: string | null;
+    },
+  ) {
+    const tagged = !!fields.assigneeId && fields.assigneeId !== myProfileId;
     setTasks((prev) =>
       prev.map((t) =>
-        t.id === id ? { ...t, title: fields.title, description: fields.description || null, due_date: fields.dueDate, links: fields.links } : t,
+        t.id === id
+          ? {
+              ...t,
+              title: fields.title,
+              description: fields.description || null,
+              due_date: fields.dueDate,
+              links: fields.links,
+              client_id: fields.clientId,
+              assigned_to: tagged ? fields.assigneeId : null,
+              assigned_by: tagged ? myProfileId : null,
+            }
+          : t,
       ),
     );
     startTransition(async () =>
@@ -207,6 +315,8 @@ export function TaskBoard({
           description: fields.description,
           dueDate: fields.dueDate,
           links: fields.links,
+          clientId: fields.clientId,
+          assigneeId: fields.assigneeId,
         }),
       ),
     );
@@ -225,7 +335,7 @@ export function TaskBoard({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          {people.map((p) => (
+          {viewablePeople.map((p) => (
             <Link
               key={p.id}
               href={p.id === myProfileId ? "/tasks" : `/tasks?board=${p.id}`}
@@ -242,28 +352,62 @@ export function TaskBoard({
           </span>
         </div>
 
-        <div className="flex overflow-hidden rounded-lg border border-border-c">
-          <button
-            onClick={() => setView("card")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${view === "card" ? "bg-gold text-ink" : "bg-white text-charcoal"}`}
-          >
-            <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} /> Card
-          </button>
-          <button
-            onClick={() => setView("list")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${view === "list" ? "bg-gold text-ink" : "bg-white text-charcoal"}`}
-          >
-            <ListIcon className="h-3.5 w-3.5" strokeWidth={2} /> List
-          </button>
+        <div className="flex items-center gap-2">
+          {isOwnBoard && (
+            <button
+              onClick={() => setShareOpen((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                shareOpen ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
+              }`}
+            >
+              <Share2 className="h-3.5 w-3.5" strokeWidth={2} /> Share ({grantedPeople.length})
+            </button>
+          )}
+          <div className="flex overflow-hidden rounded-lg border border-border-c">
+            <button
+              onClick={() => setView("card")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${view === "card" ? "bg-gold text-ink" : "bg-white text-charcoal"}`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} /> Card
+            </button>
+            <button
+              onClick={() => setView("list")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${view === "list" ? "bg-gold text-ink" : "bg-white text-charcoal"}`}
+            >
+              <ListIcon className="h-3.5 w-3.5" strokeWidth={2} /> List
+            </button>
+          </div>
         </div>
       </div>
+
+      {isOwnBoard && shareOpen && (
+        <Card>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-charcoal">
+            Who can see this board
+          </div>
+          <p className="mb-3 text-xs text-charcoal">
+            Private by default. Add people below to let them view your board — tagging someone still works either
+            way.
+          </p>
+          <AssigneePicker
+            assigned={grantedPeople.map((p) => ({ id: p.id, label: personLabel(p) }))}
+            options={allPeople.filter((p) => p.id !== myProfileId).map((p) => ({ id: p.id, label: personLabel(p) }))}
+            onAdd={addGrant}
+            onRemove={removeGrant}
+          />
+        </Card>
+      )}
 
       {view === "card" ? (
         <CardView
           categories={active}
           isOwnBoard={isOwnBoard}
           myProfileId={myProfileId}
-          people={people}
+          boardOwnerId={boardOwnerId}
+          people={allPeople}
+          peopleById={peopleById}
+          clients={clients}
+          checklistByTask={checklistByTask}
           onAddCategory={addCategory}
           onRenameCategory={renameCategoryLocal}
           onRecolorCategory={recolorCategoryLocal}
@@ -273,18 +417,30 @@ export function TaskBoard({
           onToggleComplete={toggleComplete}
           onDeleteTask={deleteTaskLocal}
           onSaveTask={saveTask}
+          onAddChecklistItem={addChecklistItemLocal}
+          onToggleChecklistItem={toggleChecklistItemLocal}
+          onUpdateChecklistItem={updateChecklistItemLocal}
+          onDeleteChecklistItem={deleteChecklistItemLocal}
         />
       ) : (
         <ListView
           categories={active}
           isOwnBoard={isOwnBoard}
           myProfileId={myProfileId}
-          people={people}
+          boardOwnerId={boardOwnerId}
+          people={allPeople}
+          peopleById={peopleById}
+          clients={clients}
+          checklistByTask={checklistByTask}
           onAddCategory={addCategory}
           onAddTask={addTask}
           onToggleComplete={toggleComplete}
           onDeleteTask={deleteTaskLocal}
           onSaveTask={saveTask}
+          onAddChecklistItem={addChecklistItemLocal}
+          onToggleChecklistItem={toggleChecklistItemLocal}
+          onUpdateChecklistItem={updateChecklistItemLocal}
+          onDeleteChecklistItem={deleteChecklistItemLocal}
         />
       )}
 
@@ -295,7 +451,11 @@ export function TaskBoard({
           </summary>
           <div className="divide-y divide-border-c border-t border-border-c">
             {completed.map((task) => {
-              const category = categories.find((c) => c.id === task.category_id);
+              const category =
+                categories.find((c) => c.id === task.category_id) ??
+                (task.assigned_to === boardOwnerId ? categories.find((c) => c.is_system) : undefined);
+              const canRestore =
+                task.created_by === myProfileId || task.assigned_to === myProfileId || category?.owner_id === myProfileId;
               return (
                 <div key={task.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
                   <div className="flex items-center gap-2 text-charcoal">
@@ -307,7 +467,7 @@ export function TaskBoard({
                     )}
                     <span className="line-through">{task.title}</span>
                   </div>
-                  {(task.created_by === myProfileId || category?.owner_id === myProfileId) && (
+                  {canRestore && (
                     <button
                       onClick={() => toggleComplete(task)}
                       className="text-xs font-semibold text-charcoal hover:text-gold"
@@ -331,7 +491,11 @@ function CardView({
   categories,
   isOwnBoard,
   myProfileId,
+  boardOwnerId,
   people,
+  peopleById,
+  clients,
+  checklistByTask,
   onAddCategory,
   onRenameCategory,
   onRecolorCategory,
@@ -341,20 +505,32 @@ function CardView({
   onToggleComplete,
   onDeleteTask,
   onSaveTask,
+  onAddChecklistItem,
+  onToggleChecklistItem,
+  onUpdateChecklistItem,
+  onDeleteChecklistItem,
 }: {
   categories: (CategoryRow & { tasks: TaskRow[] })[];
   isOwnBoard: boolean;
   myProfileId: string;
+  boardOwnerId: string;
   people: PersonLite[];
+  peopleById: Map<string, PersonLite>;
+  clients: ClientLite[];
+  checklistByTask: Map<number, ChecklistItem[]>;
   onAddCategory: (title: string, color: CategoryColorKey) => void;
   onRenameCategory: (id: number, title: string) => void;
   onRecolorCategory: (id: number, color: CategoryColorKey) => void;
   onDeleteCategory: (id: number) => void;
   onMoveCategory: (id: number, direction: "left" | "right") => void;
-  onAddTask: (categoryId: number, assigneeId: string | null, input: { title: string; dueDate: string | null; description: string; links: TaskLink[] }) => void;
+  onAddTask: (categoryId: number, assigneeId: string | null, input: { title: string; dueDate: string | null; description: string; links: TaskLink[]; clientId: number | null }) => void;
   onToggleComplete: (task: TaskRow) => void;
   onDeleteTask: (id: number) => void;
-  onSaveTask: (id: number, fields: { title: string; description: string; dueDate: string | null; links: TaskLink[] }) => void;
+  onSaveTask: (id: number, fields: { title: string; description: string; dueDate: string | null; links: TaskLink[]; clientId: number | null; assigneeId: string | null }) => void;
+  onAddChecklistItem: (taskId: number, title: string, dueDate: string | null) => void;
+  onToggleChecklistItem: (id: number, completed: boolean) => void;
+  onUpdateChecklistItem: (id: number, fields: { title?: string; dueDate?: string | null }) => void;
+  onDeleteChecklistItem: (id: number) => void;
 }) {
   const nonSystem = categories.filter((c) => !c.is_system);
 
@@ -383,18 +559,27 @@ function CardView({
                   key={task.id}
                   task={task}
                   variant="card"
-                  canManage={isOwnBoard || task.created_by === myProfileId}
+                  boardOwnerId={boardOwnerId}
+                  peopleById={peopleById}
+                  people={people}
+                  clients={clients}
+                  checklist={checklistByTask.get(task.id) ?? []}
+                  canManage={isOwnBoard || task.created_by === myProfileId || task.assigned_to === myProfileId}
                   onToggleComplete={() => onToggleComplete(task)}
                   onDelete={() => onDeleteTask(task.id)}
                   onSave={(fields) => onSaveTask(task.id, fields)}
+                  onAddChecklistItem={(title, dueDate) => onAddChecklistItem(task.id, title, dueDate)}
+                  onToggleChecklistItem={onToggleChecklistItem}
+                  onUpdateChecklistItem={onUpdateChecklistItem}
+                  onDeleteChecklistItem={onDeleteChecklistItem}
                 />
               ))}
-              {(isOwnBoard || category.is_system) && (
+              {isOwnBoard && (
                 <TaskComposer
                   categoryId={category.id}
                   people={people}
+                  clients={clients}
                   myProfileId={myProfileId}
-                  showAssignee={isOwnBoard}
                   onAdd={onAddTask}
                 />
               )}
@@ -413,22 +598,38 @@ function ListView({
   categories,
   isOwnBoard,
   myProfileId,
+  boardOwnerId,
   people,
+  peopleById,
+  clients,
+  checklistByTask,
   onAddCategory,
   onAddTask,
   onToggleComplete,
   onDeleteTask,
   onSaveTask,
+  onAddChecklistItem,
+  onToggleChecklistItem,
+  onUpdateChecklistItem,
+  onDeleteChecklistItem,
 }: {
   categories: (CategoryRow & { tasks: TaskRow[] })[];
   isOwnBoard: boolean;
   myProfileId: string;
+  boardOwnerId: string;
   people: PersonLite[];
+  peopleById: Map<string, PersonLite>;
+  clients: ClientLite[];
+  checklistByTask: Map<number, ChecklistItem[]>;
   onAddCategory: (title: string, color: CategoryColorKey) => void;
-  onAddTask: (categoryId: number, assigneeId: string | null, input: { title: string; dueDate: string | null; description: string; links: TaskLink[] }) => void;
+  onAddTask: (categoryId: number, assigneeId: string | null, input: { title: string; dueDate: string | null; description: string; links: TaskLink[]; clientId: number | null }) => void;
   onToggleComplete: (task: TaskRow) => void;
   onDeleteTask: (id: number) => void;
-  onSaveTask: (id: number, fields: { title: string; description: string; dueDate: string | null; links: TaskLink[] }) => void;
+  onSaveTask: (id: number, fields: { title: string; description: string; dueDate: string | null; links: TaskLink[]; clientId: number | null; assigneeId: string | null }) => void;
+  onAddChecklistItem: (taskId: number, title: string, dueDate: string | null) => void;
+  onToggleChecklistItem: (id: number, completed: boolean) => void;
+  onUpdateChecklistItem: (id: number, fields: { title?: string; dueDate?: string | null }) => void;
+  onDeleteChecklistItem: (id: number) => void;
 }) {
   const [addingCategory, setAddingCategory] = useState(false);
 
@@ -451,22 +652,25 @@ function ListView({
                   key={task.id}
                   task={task}
                   variant="list"
-                  canManage={isOwnBoard || task.created_by === myProfileId}
+                  boardOwnerId={boardOwnerId}
+                  peopleById={peopleById}
+                  people={people}
+                  clients={clients}
+                  checklist={checklistByTask.get(task.id) ?? []}
+                  canManage={isOwnBoard || task.created_by === myProfileId || task.assigned_to === myProfileId}
                   onToggleComplete={() => onToggleComplete(task)}
                   onDelete={() => onDeleteTask(task.id)}
                   onSave={(fields) => onSaveTask(task.id, fields)}
+                  onAddChecklistItem={(title, dueDate) => onAddChecklistItem(task.id, title, dueDate)}
+                  onToggleChecklistItem={onToggleChecklistItem}
+                  onUpdateChecklistItem={onUpdateChecklistItem}
+                  onDeleteChecklistItem={onDeleteChecklistItem}
                 />
               ))}
             </div>
-            {(isOwnBoard || category.is_system) && (
+            {isOwnBoard && (
               <div className="p-2">
-                <TaskComposer
-                  categoryId={category.id}
-                  people={people}
-                  myProfileId={myProfileId}
-                  showAssignee={isOwnBoard}
-                  onAdd={onAddTask}
-                />
+                <TaskComposer categoryId={category.id} people={people} clients={clients} myProfileId={myProfileId} onAdd={onAddTask} />
               </div>
             )}
           </Card>
@@ -559,8 +763,8 @@ function CategoryHeader({
             <button onClick={() => onMove("right")} disabled={!canReorderRight} className="disabled:opacity-30" aria-label="Move right">
               <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
-            <button onClick={() => setPickingColor((v) => !v)} aria-label="Change colour">
-              <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+            <button onClick={() => setPickingColor((v) => !v)} title="Change colour" aria-label="Change colour">
+              <Palette className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
             {!category.is_system && (
               <button onClick={() => setConfirmingDelete(true)} aria-label="Delete category">
@@ -669,20 +873,21 @@ function AddCategoryInline({
 function TaskComposer({
   categoryId,
   people,
+  clients,
   myProfileId,
-  showAssignee,
   onAdd,
 }: {
   categoryId: number;
   people: PersonLite[];
+  clients: ClientLite[];
   myProfileId: string;
-  showAssignee: boolean;
-  onAdd: (categoryId: number, assigneeId: string | null, input: { title: string; dueDate: string | null; description: string; links: TaskLink[] }) => void;
+  onAdd: (categoryId: number, assigneeId: string | null, input: { title: string; dueDate: string | null; description: string; links: TaskLink[]; clientId: number | null }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [assigneeId, setAssigneeId] = useState(myProfileId);
+  const [clientId, setClientId] = useState("");
   const [description, setDescription] = useState("");
   const [links, setLinks] = useState<TaskLink[]>([]);
   const [showMore, setShowMore] = useState(false);
@@ -691,6 +896,7 @@ function TaskComposer({
     setTitle("");
     setDueDate("");
     setAssigneeId(myProfileId);
+    setClientId("");
     setDescription("");
     setLinks([]);
     setShowMore(false);
@@ -699,11 +905,12 @@ function TaskComposer({
 
   function submit() {
     if (!title.trim()) return;
-    onAdd(categoryId, showAssignee ? assigneeId : null, {
+    onAdd(categoryId, assigneeId, {
       title: title.trim(),
       dueDate: dueDate || null,
       description,
       links: links.filter((l) => l.url.trim()),
+      clientId: clientId ? Number(clientId) : null,
     });
     reset();
   }
@@ -724,11 +931,19 @@ function TaskComposer({
       <Input autoFocus placeholder="Task title" value={title} onChange={(e) => setTitle(e.target.value)} />
       <div className="flex flex-wrap gap-2">
         <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-36" />
-        {showAssignee && (
-          <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="w-40">
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.id === myProfileId ? "Myself" : personLabel(p)}
+        <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="w-36">
+          {people.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.id === myProfileId ? "Myself" : personLabel(p)}
+            </option>
+          ))}
+        </Select>
+        {clients.length > 0 && (
+          <Select value={clientId} onChange={(e) => setClientId(e.target.value)} className="w-36">
+            <option value="">No client</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </Select>
@@ -798,28 +1013,61 @@ function LinkListEditor({ links, onChange }: { links: TaskLink[]; onChange: (lin
 function TaskItem({
   task,
   variant,
+  boardOwnerId,
+  peopleById,
+  people,
+  clients,
+  checklist,
   canManage,
   onToggleComplete,
   onDelete,
   onSave,
+  onAddChecklistItem,
+  onToggleChecklistItem,
+  onUpdateChecklistItem,
+  onDeleteChecklistItem,
 }: {
   task: TaskRow;
   variant: "card" | "list";
+  boardOwnerId: string;
+  peopleById: Map<string, PersonLite>;
+  people: PersonLite[];
+  clients: ClientLite[];
+  checklist: ChecklistItem[];
   canManage: boolean;
   onToggleComplete: () => void;
   onDelete: () => void;
-  onSave: (fields: { title: string; description: string; dueDate: string | null; links: TaskLink[] }) => void;
+  onSave: (fields: { title: string; description: string; dueDate: string | null; links: TaskLink[]; clientId: number | null; assigneeId: string | null }) => void;
+  onAddChecklistItem: (title: string, dueDate: string | null) => void;
+  onToggleChecklistItem: (id: number, completed: boolean) => void;
+  onUpdateChecklistItem: (id: number, fields: { title?: string; dueDate?: string | null }) => void;
+  onDeleteChecklistItem: (id: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
   const [links, setLinks] = useState<TaskLink[]>(task.links);
+  const [clientId, setClientId] = useState(task.client_id ? String(task.client_id) : "");
+  const [assigneeId, setAssigneeId] = useState(task.assigned_to ?? "");
   const overdue = isOverdue(task);
+  const client = task.client_id ? clients.find((c) => c.id === task.client_id) : undefined;
+  const { done: checklistDone, total: checklistTotal } = checklistProgress(checklist);
+  // A task shows here two ways: natively (its own category belongs to this
+  // board) or cross-posted under Tagged Tasks (assigned_to === this board's
+  // owner). Which one decides whether the chip reads "tagged to" or "tagged by".
+  const showingAsTaggedHere = task.assigned_to === boardOwnerId;
 
   function save() {
     if (!title.trim()) return;
-    onSave({ title: title.trim(), description, dueDate: dueDate || null, links: links.filter((l) => l.url.trim()) });
+    onSave({
+      title: title.trim(),
+      description,
+      dueDate: dueDate || null,
+      links: links.filter((l) => l.url.trim()),
+      clientId: clientId ? Number(clientId) : null,
+      assigneeId: assigneeId || null,
+    });
     setExpanded(false);
   }
 
@@ -827,10 +1075,11 @@ function TaskItem({
     variant === "card"
       ? "rounded-lg border border-border-c bg-white p-2.5"
       : "px-4 py-2.5";
+  const clientAccent = client?.colour ? { borderLeft: `3px solid ${client.colour}` } : undefined;
 
   if (expanded && canManage) {
     return (
-      <div className={container}>
+      <div className={container} style={variant === "card" ? clientAccent : undefined}>
         <div className="space-y-2">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} />
           <Textarea
@@ -839,8 +1088,43 @@ function TaskItem({
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
           />
-          <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-36" />
+          <div className="flex flex-wrap gap-2">
+            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-36" />
+            <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="w-36">
+              <option value="">Not tagged</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {personLabel(p)}
+                </option>
+              ))}
+            </Select>
+            {clients.length > 0 && (
+              <Select value={clientId} onChange={(e) => setClientId(e.target.value)} className="w-36">
+                <option value="">No client</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </div>
           <LinkListEditor links={links} onChange={setLinks} />
+
+          <div className="border-t border-border-c pt-2">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-charcoal">
+              <CheckSquare className="h-3.5 w-3.5" strokeWidth={2} />
+              Checklist{checklistTotal > 0 && ` (${checklistDone}/${checklistTotal})`}
+            </div>
+            <ChecklistEditor
+              items={checklist}
+              onAdd={onAddChecklistItem}
+              onToggle={onToggleChecklistItem}
+              onUpdate={onUpdateChecklistItem}
+              onDelete={onDeleteChecklistItem}
+            />
+          </div>
+
           <div className="flex items-center gap-2">
             <Button onClick={save} className="px-3 py-1.5 text-xs">
               Save
@@ -858,7 +1142,7 @@ function TaskItem({
   }
 
   return (
-    <div className={`${container} flex items-start gap-2`}>
+    <div className={`${container} flex items-start gap-2`} style={variant === "card" ? clientAccent : undefined}>
       <button
         onClick={onToggleComplete}
         disabled={!canManage}
@@ -891,8 +1175,22 @@ function TaskItem({
               {task.links.length}
             </span>
           )}
-          {task.assigned_by && (
-            <span className="rounded-full bg-black/5 px-1.5 py-0.5 font-semibold uppercase tracking-wide">Tagged</span>
+          {checklistTotal > 0 && (
+            <span className={`flex items-center gap-1 ${checklistDone === checklistTotal ? "text-emerald-600" : ""}`}>
+              <CheckSquare className="h-3 w-3" strokeWidth={2} />
+              {checklistDone}/{checklistTotal}
+            </span>
+          )}
+          {client && (
+            <span className="flex items-center gap-1 font-medium">
+              <span className="h-2 w-2 rounded-full" style={{ background: client.colour ?? "#999" }} />
+              {client.name}
+            </span>
+          )}
+          {task.assigned_to && (
+            <span className="rounded-full bg-black/5 px-1.5 py-0.5 font-semibold uppercase tracking-wide">
+              {showingAsTaggedHere ? `Tagged by ${personLabel(peopleById.get(task.assigned_by ?? ""))}` : `→ ${personLabel(peopleById.get(task.assigned_to))}`}
+            </span>
           )}
         </div>
         {task.links.length > 0 && expanded === false && variant === "list" && (
@@ -912,6 +1210,91 @@ function TaskItem({
           </div>
         )}
       </button>
+    </div>
+  );
+}
+
+function ChecklistEditor({
+  items,
+  onAdd,
+  onToggle,
+  onUpdate,
+  onDelete,
+}: {
+  items: ChecklistItem[];
+  onAdd: (title: string, dueDate: string | null) => void;
+  onToggle: (id: number, completed: boolean) => void;
+  onUpdate: (id: number, fields: { title?: string; dueDate?: string | null }) => void;
+  onDelete: (id: number) => void;
+}) {
+  const [newTitle, setNewTitle] = useState("");
+  const [newDueDate, setNewDueDate] = useState("");
+  const [editingDateFor, setEditingDateFor] = useState<number | null>(null);
+
+  function add() {
+    if (!newTitle.trim()) return;
+    onAdd(newTitle.trim(), newDueDate || null);
+    setNewTitle("");
+    setNewDueDate("");
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {items.map((item) => (
+        <div key={item.id} className="flex items-center gap-1.5 text-sm">
+          <button
+            onClick={() => onToggle(item.id, !item.completed)}
+            aria-label="Toggle checklist item"
+            className={`flex h-3.5 w-3.5 flex-none items-center justify-center rounded border ${
+              item.completed ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
+            }`}
+          >
+            {item.completed && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+          </button>
+          <span className={`flex-1 ${item.completed ? "text-charcoal line-through" : "text-ink"}`}>{item.title}</span>
+          {editingDateFor === item.id ? (
+            <input
+              type="date"
+              autoFocus
+              defaultValue={item.due_date ?? ""}
+              onBlur={(e) => {
+                onUpdate(item.id, { dueDate: e.target.value || null });
+                setEditingDateFor(null);
+              }}
+              className="w-32 rounded border border-border-c px-1 py-0.5 text-xs outline-none focus:border-gold"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingDateFor(item.id)}
+              className={`flex flex-none items-center gap-1 text-[11px] ${item.due_date ? "text-charcoal" : "text-charcoal/40"}`}
+            >
+              <Calendar className="h-3 w-3" strokeWidth={2} />
+              {item.due_date ? formatDueDate(item.due_date) : "date"}
+            </button>
+          )}
+          <button onClick={() => onDelete(item.id)} aria-label="Delete checklist item">
+            <X className="h-3 w-3 text-charcoal" strokeWidth={2} />
+          </button>
+        </div>
+      ))}
+      <div className="flex items-center gap-1.5">
+        <Input
+          placeholder="Add checklist item…"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
+          className="flex-1 py-1 text-xs"
+        />
+        <input
+          type="date"
+          value={newDueDate}
+          onChange={(e) => setNewDueDate(e.target.value)}
+          className="w-32 rounded border border-border-c px-1.5 py-1 text-xs outline-none focus:border-gold"
+        />
+        <button onClick={add} disabled={!newTitle.trim()} className="flex-none text-charcoal hover:text-gold disabled:opacity-40">
+          <Plus className="h-4 w-4" strokeWidth={2} />
+        </button>
+      </div>
     </div>
   );
 }

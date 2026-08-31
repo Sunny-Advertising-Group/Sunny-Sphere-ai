@@ -9,6 +9,7 @@ import {
   LifeBuoy,
   MessageSquareText,
   Sparkles,
+  Tag,
   UserPlus,
   Users,
   Video,
@@ -24,6 +25,7 @@ import type { PersonOption } from "@/components/AssigneePicker";
 import { AddResourceForm } from "@/components/AddResourceForm";
 import { InviteForm } from "./InviteForm";
 import { ToolQueue } from "./ToolQueue";
+import { ToolCategoriesManager } from "./ToolCategoriesManager";
 import { TipQueue } from "./TipQueue";
 import { PublishedToolsList } from "./PublishedToolsList";
 import { PublishedTipsList } from "./PublishedTipsList";
@@ -68,6 +70,7 @@ export default async function AdminPage({
     { data: clientOwners },
     { data: rawOptiLogs },
     { data: tiers },
+    { data: toolCategories },
   ] = await Promise.all([
     supabase
       .from("tools")
@@ -126,6 +129,7 @@ export default async function AdminPage({
       .order("completed_at", { ascending: false })
       .limit(200),
     supabase.from("client_tiers").select("id, name, colour").order("sort_order"),
+    supabase.from("tool_categories").select("id, name").order("name"),
   ]);
 
   const grantsByUser = new Map<string, string[]>();
@@ -205,6 +209,12 @@ export default async function AdminPage({
       title: "Published tools",
       icon: <CheckCircle2 className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <PublishedToolsList tools={publishedTools ?? []} />,
+    },
+    {
+      id: "tool-categories",
+      title: "Tool categories",
+      icon: <Tag className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: <ToolCategoriesManager categories={toolCategories ?? []} />,
     },
     {
       id: "tips-pending",
