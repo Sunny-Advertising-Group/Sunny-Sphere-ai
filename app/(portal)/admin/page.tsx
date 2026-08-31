@@ -59,6 +59,7 @@ export default async function AdminPage({
     { data: grants },
     { data: policies },
     { data: faqs },
+    { data: dashboardDocs },
     { data: learningPaths },
     { data: loomVideos },
     { data: clients },
@@ -107,6 +108,7 @@ export default async function AdminPage({
     supabase.from("section_access").select("user_id, section"),
     supabase.from("resources").select("*").eq("section", "policy").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "faq").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "dashboard_doc").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "learning_path").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "loom").order("sort_order"),
     supabase
@@ -264,6 +266,19 @@ export default async function AdminPage({
             <AddResourceForm section="faq" label="+ Add FAQ" showBody />
           </div>
           <ResourceList items={faqs ?? []} showBody />
+        </>
+      ),
+    },
+    {
+      id: "dashboard-docs",
+      title: "Dashboard — important docs",
+      icon: <FileText className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="dashboard_doc" label="+ Add doc" />
+          </div>
+          <ResourceList items={dashboardDocs ?? []} />
         </>
       ),
     },

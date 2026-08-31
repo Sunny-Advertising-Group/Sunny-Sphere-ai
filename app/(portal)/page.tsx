@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Sun } from "lucide-react";
+import { ExternalLink, FileText, Sun } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
@@ -17,11 +17,17 @@ export default async function DashboardPage() {
   const supabase = await createClient();
   const now = currentInstant();
 
-  const [{ count: publishedTools }, { count: myRequests }, { count: recentTips }] = await Promise.all([
-    supabase.from("tools").select("id", { count: "exact", head: true }).eq("status", "published"),
-    supabase.from("ai_requests").select("id", { count: "exact", head: true }).eq("submitted_by", profile.id),
-    supabase.from("tips").select("id", { count: "exact", head: true }),
-  ]);
+  const [{ count: publishedTools }, { count: myRequests }, { count: recentTips }, { data: dashboardDocs }] =
+    await Promise.all([
+      supabase.from("tools").select("id", { count: "exact", head: true }).eq("status", "published"),
+      supabase.from("ai_requests").select("id", { count: "exact", head: true }).eq("submitted_by", profile.id),
+      supabase.from("tips").select("id", { count: "exact", head: true }),
+      supabase
+        .from("resources")
+        .select("id, title, description, url, resource_type")
+        .eq("section", "dashboard_doc")
+        .order("sort_order"),
+    ]);
 
   let pendingTools = 0;
   let openTickets = 0;
@@ -161,6 +167,34 @@ export default async function DashboardPage() {
         </h1>
         <p className="mt-1 text-sm text-charcoal">Here&rsquo;s what&rsquo;s happening in Sunny Sphere.</p>
       </div>
+
+      {dashboardDocs && dashboardDocs.length > 0 && (
+        <div className="px-8 pt-8">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
+            <FileText className="h-4 w-4 text-gold" strokeWidth={2} aria-hidden /> Important docs
+          </h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {dashboardDocs.map((doc) =>
+              doc.url ? (
+                <a key={doc.id} href={doc.url} target="_blank" rel="noopener noreferrer">
+                  <Card className="h-full transition-colors hover:border-gold/50">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-semibold text-ink">{doc.title}</div>
+                      <ExternalLink className="h-3.5 w-3.5 flex-none text-charcoal" strokeWidth={2} aria-hidden />
+                    </div>
+                    {doc.description && <p className="mt-1 text-sm text-charcoal">{doc.description}</p>}
+                  </Card>
+                </a>
+              ) : (
+                <Card key={doc.id}>
+                  <div className="font-semibold text-ink">{doc.title}</div>
+                  {doc.description && <p className="mt-1 text-sm text-charcoal">{doc.description}</p>}
+                </Card>
+              ),
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 p-8 sm:grid-cols-2 lg:grid-cols-4">
         {tiles

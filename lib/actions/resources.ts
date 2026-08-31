@@ -29,6 +29,7 @@ export async function addResource(_prevState: unknown, formData: FormData) {
 
   revalidatePath("/agency");
   revalidatePath("/learning");
+  revalidatePath("/");
   return { success: true };
 }
 
@@ -61,6 +62,7 @@ export async function updateResource(_prevState: unknown, formData: FormData) {
   revalidatePath("/agency");
   revalidatePath("/learning");
   revalidatePath("/admin");
+  revalidatePath("/");
   return { success: true };
 }
 
@@ -75,6 +77,7 @@ export async function deleteResource(id: number) {
   revalidatePath("/agency");
   revalidatePath("/learning");
   revalidatePath("/admin");
+  revalidatePath("/");
   return { success: true };
 }
 
