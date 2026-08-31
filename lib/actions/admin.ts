@@ -104,6 +104,46 @@ export async function reviewTip(tipId: number, status: "published" | "rejected")
   return { success: true };
 }
 
+// tools.category is plain text (not a foreign key), so renaming a category
+// here also relabels every tool currently carrying the old name — otherwise
+// the canonical list and existing tools would drift apart.
+export async function renameToolCategory(categoryId: number, name: string) {
+  const { supabase, isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Category name can't be empty." };
+
+  const { data: existing } = await supabase.from("tool_categories").select("name").eq("id", categoryId).single();
+  if (!existing) return { error: "Category not found." };
+
+  const { error } = await supabase.from("tool_categories").update({ name: trimmed }).eq("id", categoryId);
+  if (error) return { error: error.message };
+
+  if (existing.name !== trimmed) {
+    await supabase.from("tools").update({ category: trimmed }).eq("category", existing.name);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/tools");
+  revalidatePath("/tools/upload");
+  return { success: true };
+}
+
+// Only removes the category from the pick list — tools already carrying its
+// name keep that text (there's no FK to cascade), they just won't be
+// re-selectable as that category going forward.
+export async function deleteToolCategory(categoryId: number) {
+  const { supabase, isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+
+  const { error } = await supabase.from("tool_categories").delete().eq("id", categoryId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  revalidatePath("/tools/upload");
+  return { success: true };
+}
+
 export async function deleteTool(toolId: number) {
   const { supabase, isAdmin } = await requireAdmin();
   if (!isAdmin) return { error: "Not authorized." };

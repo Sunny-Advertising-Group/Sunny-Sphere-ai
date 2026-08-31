@@ -11,7 +11,7 @@ export default async function ToolsPage() {
   const supabase = await createClient();
   const { data: tools } = await supabase
     .from("tools")
-    .select("id, name, tool_type, category, description, how_to_use, link_url, file_path, status, use_count, owner_id")
+    .select("id, name, tool_type, category, description, how_to_use, link_url, file_path, colour, status, use_count, owner_id")
     .order("created_at", { ascending: false });
 
   return (
