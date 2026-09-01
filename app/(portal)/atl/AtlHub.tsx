@@ -8,6 +8,7 @@ import {
   buildAtlChecklistData,
   cadenceLabel,
   categoryKind,
+  groupChecklistByClient,
   kindLabel,
   KIND_ORDER,
   type ChecklistLogInput,
@@ -266,39 +267,46 @@ function ChecklistBoard({
       </Card>
 
       <div className="flex flex-col gap-1.5">
-        {cards.map((card) => (
+        {groupChecklistByClient(cards).map((group) => (
           <div
-            key={card.id}
-            className={`flex items-center gap-3 rounded-xl border p-2.5 transition-colors ${
-              card.done ? "border-emerald-300 bg-emerald-50" : "border-border-c bg-white"
+            key={group.clientId}
+            className={`flex flex-wrap items-center gap-2 rounded-xl border p-1.5 transition-colors ${
+              group.allDone ? "border-emerald-300 bg-emerald-50" : "border-border-c bg-white"
             }`}
           >
-            <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: card.clientColour || "#FDB600" }} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-bold text-ink">{card.clientName}</div>
-              <div className="truncate text-xs text-charcoal">
-                {kindLabel(card.kind)} · {card.title} · {cadenceLabel(card.cadence)}
+            <div className="flex min-w-[180px] flex-none items-center gap-2 rounded-lg bg-ink px-2.5 py-1.5 text-white">
+              <span className="h-2 w-2 flex-none rounded-full" style={{ background: group.clientColour || "#FDB600" }} />
+              <div>
+                <div className="text-sm font-bold">{group.clientName}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-white/70">
+                  {group.cadences.map(cadenceLabel).join(" · ")}
+                </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => (card.done ? onUntick(card.id) : onTick(card.id))}
-              title={card.done ? "Click to undo this period's tick" : "Mark updated for this period"}
-              className={`flex flex-none items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                card.done
-                  ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:border-emerald-400"
-                  : "border-border-c bg-white text-ink hover:border-gold/50"
-              }`}
-            >
-              <span
-                className={`flex h-3.5 w-3.5 flex-none items-center justify-center rounded border ${
-                  card.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
-                }`}
-              >
-                {card.done && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
-              </span>
-              {card.done ? "Updated" : "Mark updated"}
-            </button>
+            <div className="flex min-w-[220px] flex-1 flex-wrap items-center gap-1.5">
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => (item.done ? onUntick(item.id) : onTick(item.id))}
+                  title={item.done ? "Click to undo this period's tick" : "Mark updated for this period"}
+                  className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                    item.done
+                      ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:border-emerald-400"
+                      : "border-border-c bg-white text-ink hover:border-gold/50"
+                  }`}
+                >
+                  <span
+                    className={`flex h-3.5 w-3.5 flex-none items-center justify-center rounded border ${
+                      item.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
+                    }`}
+                  >
+                    {item.done && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                  </span>
+                  {kindLabel(item.kind)}
+                </button>
+              ))}
+            </div>
           </div>
         ))}
       </div>

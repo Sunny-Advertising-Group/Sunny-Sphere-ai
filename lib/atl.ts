@@ -211,3 +211,42 @@ export function buildAtlChecklistData(
     totalActive: cards.length,
   };
 }
+
+export type ChecklistClientGroup = {
+  clientId: number;
+  clientName: string;
+  clientColour: string | null;
+  cadences: string[];
+  items: ChecklistCard[];
+  allDone: boolean;
+};
+
+// One row per client for the Checklist tab — every one of that client's
+// cadenced links (WIP, Flight plan, etc.) becomes its own tick chip on that
+// same row, with the row's cadence(s) shown under the client name.
+export function groupChecklistByClient(cards: ChecklistCard[]): ChecklistClientGroup[] {
+  const cadenceOrder = CADENCE_OPTIONS.map((c) => c.value);
+  const map = new Map<number, ChecklistClientGroup>();
+
+  for (const card of cards) {
+    const group = map.get(card.clientId) ?? {
+      clientId: card.clientId,
+      clientName: card.clientName,
+      clientColour: card.clientColour,
+      cadences: [],
+      items: [],
+      allDone: true,
+    };
+    group.items.push(card);
+    if (!group.cadences.includes(card.cadence)) group.cadences.push(card.cadence);
+    map.set(card.clientId, group);
+  }
+
+  const groups = Array.from(map.values());
+  for (const group of groups) {
+    group.allDone = group.items.every((item) => item.done);
+    group.items.sort((a, b) => a.title.localeCompare(b.title));
+    group.cadences.sort((a, b) => cadenceOrder.indexOf(a) - cadenceOrder.indexOf(b));
+  }
+  return groups.sort((a, b) => a.clientName.localeCompare(b.clientName));
+}
