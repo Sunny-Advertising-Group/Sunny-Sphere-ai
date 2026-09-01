@@ -12,6 +12,13 @@ export async function addResource(_prevState: unknown, formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   if (!section || !title) return { error: "Section and title are required." };
 
+  // Dashboard quick links are meant to be a short, current-at-a-glance
+  // list — capped so it can't quietly grow into another Important docs.
+  if (section === "dashboard_link") {
+    const { count } = await supabase.from("resources").select("id", { count: "exact", head: true }).eq("section", "dashboard_link");
+    if ((count ?? 0) >= 5) return { error: "Quick links are capped at 5 — delete one first to add another." };
+  }
+
   const moduleCount = formData.get("module_count");
 
   const { error } = await supabase.from("resources").insert({

@@ -1,4 +1,5 @@
 import {
+  Bell,
   Building2,
   CheckCircle2,
   ClipboardList,
@@ -7,6 +8,7 @@ import {
   HelpCircle,
   Lightbulb,
   LifeBuoy,
+  Link2,
   MessageSquareText,
   Sparkles,
   Tag,
@@ -60,6 +62,8 @@ export default async function AdminPage({
     { data: policies },
     { data: faqs },
     { data: dashboardDocs },
+    { data: dashboardNotifications },
+    { data: dashboardLinks },
     { data: learningPaths },
     { data: loomVideos },
     { data: clients },
@@ -109,6 +113,8 @@ export default async function AdminPage({
     supabase.from("resources").select("*").eq("section", "policy").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "faq").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "dashboard_doc").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "dashboard_notification").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "dashboard_link").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "learning_path").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "loom").order("sort_order"),
     supabase
@@ -279,6 +285,36 @@ export default async function AdminPage({
             <AddResourceForm section="dashboard_doc" label="+ Add doc" />
           </div>
           <ResourceList items={dashboardDocs ?? []} />
+        </>
+      ),
+    },
+    {
+      id: "dashboard-notifications",
+      title: "Dashboard — notifications",
+      icon: <Bell className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="dashboard_notification" label="+ Add notification" showBody />
+          </div>
+          <ResourceList items={dashboardNotifications ?? []} showBody />
+        </>
+      ),
+    },
+    {
+      id: "dashboard-links",
+      title: "Dashboard — quick links",
+      icon: <Link2 className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            {(dashboardLinks?.length ?? 0) < 5 ? (
+              <AddResourceForm section="dashboard_link" label="+ Add link" />
+            ) : (
+              <p className="text-xs text-charcoal">Quick links are capped at 5 — delete one below to add another.</p>
+            )}
+          </div>
+          <ResourceList items={dashboardLinks ?? []} />
         </>
       ),
     },

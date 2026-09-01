@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, FileText, Sun } from "lucide-react";
+import { Bell, ExternalLink, FileText, Link2, Sun } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
@@ -12,22 +12,32 @@ const LOG_LOOKBACK_DAYS = 100;
 export default async function DashboardPage() {
   const visibility = await getVisibility();
   if (!visibility) redirect("/login");
-  const { profile, isAdmin, canSee } = visibility;
+  const { profile, isAdmin } = visibility;
 
   const supabase = await createClient();
   const now = currentInstant();
 
-  const [{ count: publishedTools }, { count: myRequests }, { count: recentTips }, { data: dashboardDocs }] =
-    await Promise.all([
-      supabase.from("tools").select("id", { count: "exact", head: true }).eq("status", "published"),
-      supabase.from("ai_requests").select("id", { count: "exact", head: true }).eq("submitted_by", profile.id),
-      supabase.from("tips").select("id", { count: "exact", head: true }),
-      supabase
-        .from("resources")
-        .select("id, title, description, url, resource_type")
-        .eq("section", "dashboard_doc")
-        .order("sort_order"),
-    ]);
+  const [
+    { count: publishedTools },
+    { count: myRequests },
+    { data: dashboardDocs },
+    { data: dashboardNotifications },
+    { data: dashboardLinks },
+  ] = await Promise.all([
+    supabase.from("tools").select("id", { count: "exact", head: true }).eq("status", "published"),
+    supabase.from("ai_requests").select("id", { count: "exact", head: true }).eq("submitted_by", profile.id),
+    supabase
+      .from("resources")
+      .select("id, title, description, url, resource_type")
+      .eq("section", "dashboard_doc")
+      .order("sort_order"),
+    supabase
+      .from("resources")
+      .select("id, title, body")
+      .eq("section", "dashboard_notification")
+      .order("sort_order"),
+    supabase.from("resources").select("id, title, url").eq("section", "dashboard_link").order("sort_order"),
+  ]);
 
   let pendingTools = 0;
   let openTickets = 0;
@@ -135,27 +145,6 @@ export default async function DashboardPage() {
       hint: "your submissions",
       show: true,
     },
-    {
-      href: "/tips",
-      label: "Tips & Prompts",
-      value: recentTips ?? 0,
-      hint: "shared so far",
-      show: true,
-    },
-    {
-      href: "/atl",
-      label: "ATL",
-      value: "→",
-      hint: "clients & live material",
-      show: canSee("atl"),
-    },
-    {
-      href: "/digital-opti",
-      label: "Digital",
-      value: "→",
-      hint: "cadence & optimisation log",
-      show: canSee("digital_opti"),
-    },
   ];
 
   return (
@@ -167,6 +156,41 @@ export default async function DashboardPage() {
         </h1>
         <p className="mt-1 text-sm text-charcoal">Here&rsquo;s what&rsquo;s happening in Sunny Sphere.</p>
       </div>
+
+      {dashboardNotifications && dashboardNotifications.length > 0 && (
+        <div className="space-y-2 px-8 pt-8">
+          {dashboardNotifications.map((n) => (
+            <div key={n.id} className="flex items-start gap-3 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3">
+              <Bell className="mt-0.5 h-4 w-4 flex-none text-gold" strokeWidth={2} aria-hidden />
+              <div>
+                <div className="font-semibold text-ink">{n.title}</div>
+                {n.body && <p className="mt-0.5 text-sm text-charcoal">{n.body}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {dashboardLinks && dashboardLinks.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-8 pt-6">
+          <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-charcoal">
+            <Link2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> Quick links
+          </span>
+          {dashboardLinks.map((link) =>
+            link.url ? (
+              <a
+                key={link.id}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-border-c bg-white px-3 py-1.5 text-xs font-semibold text-ink hover:border-gold/50"
+              >
+                {link.title}
+              </a>
+            ) : null,
+          )}
+        </div>
+      )}
 
       {dashboardDocs && dashboardDocs.length > 0 && (
         <div className="px-8 pt-8">
@@ -196,7 +220,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 p-8 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 p-8 sm:grid-cols-2">
         {tiles
           .filter((t) => t.show)
           .map((tile) => (
