@@ -1,3 +1,5 @@
+import { isLoggedForCurrentPeriod, lastLoggedAt } from "./digitalOpti";
+
 export const KIND_LABELS: Record<string, string> = {
   flight_plan: "Flight plan",
   wip: "WIP",
@@ -147,4 +149,65 @@ const LIVE_MATERIAL_STATUS_CLASSNAMES: Record<string, string> = {
 export function liveMaterialStatusClassName(status: string | null): string {
   if (!status) return "text-charcoal bg-black/5";
   return LIVE_MATERIAL_STATUS_CLASSNAMES[status.trim().toLowerCase()] ?? "text-charcoal bg-black/5";
+}
+
+// --- Checklist tab: tick-per-period, same mechanism as Digital Opti (see
+// periodStart/isLoggedForCurrentPeriod/lastLoggedAt in lib/digitalOpti.ts —
+// those are cadence-generic, not Digital-specific, so reused as-is here) but
+// keyed on each atl_link's own cadence rather than a client-level one.
+
+export type ChecklistLinkInput = {
+  id: number;
+  clientId: number;
+  clientName: string;
+  clientColour: string | null;
+  kind: string;
+  title: string;
+  cadence: string | null;
+};
+
+export type ChecklistLogInput = { atl_link_id: number; completed_at: string; voided_at: string | null };
+
+export type ChecklistCard = ChecklistLinkInput & {
+  cadence: string;
+  done: boolean;
+  lastLoggedAt: string | null;
+};
+
+export type ChecklistData = {
+  cards: ChecklistCard[];
+  completionPct: number;
+  totalDone: number;
+  totalActive: number;
+};
+
+export function buildAtlChecklistData(
+  links: ChecklistLinkInput[],
+  logs: ChecklistLogInput[],
+  now: Date = new Date(),
+): ChecklistData {
+  const logsByLink = new Map<number, { completed_at: string; voided_at: string | null }[]>();
+  for (const log of logs) {
+    const arr = logsByLink.get(log.atl_link_id) ?? [];
+    arr.push({ completed_at: log.completed_at, voided_at: log.voided_at });
+    logsByLink.set(log.atl_link_id, arr);
+  }
+
+  let totalDone = 0;
+  const cards: ChecklistCard[] = links
+    .filter((l): l is ChecklistLinkInput & { cadence: string } => !!l.cadence && l.cadence !== "none")
+    .map((l) => {
+      const linkLogs = logsByLink.get(l.id) ?? [];
+      const done = isLoggedForCurrentPeriod(l.cadence, linkLogs, now);
+      if (done) totalDone += 1;
+      return { ...l, done, lastLoggedAt: lastLoggedAt(linkLogs) };
+    })
+    .sort((a, b) => a.clientName.localeCompare(b.clientName) || a.title.localeCompare(b.title));
+
+  return {
+    cards,
+    completionPct: cards.length === 0 ? 0 : Math.round((totalDone / cards.length) * 100),
+    totalDone,
+    totalActive: cards.length,
+  };
 }
