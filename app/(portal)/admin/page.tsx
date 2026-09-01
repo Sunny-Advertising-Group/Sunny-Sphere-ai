@@ -8,9 +8,7 @@ import {
   GraduationCap,
   HelpCircle,
   Lightbulb,
-  LifeBuoy,
   Link2,
-  MessageSquareText,
   Sparkles,
   Tag,
   UserPlus,
@@ -31,9 +29,7 @@ import { ToolQueue } from "./ToolQueue";
 import { ToolCategoriesManager } from "./ToolCategoriesManager";
 import { TipQueue } from "./TipQueue";
 import { PublishedToolsList } from "./PublishedToolsList";
-import { PublishedTipsList } from "./PublishedTipsList";
 import { RequestsInbox } from "./RequestsInbox";
-import { TicketsInbox } from "./TicketsInbox";
 import { PeopleTable, type Person } from "./PeopleTable";
 import { TwoFactorSetup } from "./TwoFactorSetup";
 import { ResourceList } from "./ResourceList";
@@ -55,9 +51,7 @@ export default async function AdminPage({
     { data: pendingTools },
     { data: publishedTools },
     { data: pendingTips },
-    { data: publishedTips },
     { data: aiRequests },
-    { data: tickets },
     { data: profiles },
     { data: grants },
     { data: policies },
@@ -96,20 +90,10 @@ export default async function AdminPage({
       .eq("status", "pending")
       .order("created_at"),
     supabase
-      .from("tips")
-      .select("id, title, body, is_prompt")
-      .eq("status", "published")
-      .order("created_at", { ascending: false }),
-    supabase
       .from("ai_requests")
       .select("id, task, frequency, hours_estimate, status")
       .neq("status", "shipped")
       .neq("status", "parked")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("support_tickets")
-      .select("id, body, category, urgency, status")
-      .neq("status", "resolved")
       .order("created_at", { ascending: false }),
     supabase.from("profiles").select("id, email, full_name, team, role").order("email"),
     supabase.from("section_access").select("user_id, section"),
@@ -237,22 +221,10 @@ export default async function AdminPage({
       content: <TipQueue tips={pendingTips ?? []} />,
     },
     {
-      id: "tips-published",
-      title: "Published tips & prompts",
-      icon: <MessageSquareText className="h-5 w-5" strokeWidth={2} aria-hidden />,
-      content: <PublishedTipsList tips={publishedTips ?? []} />,
-    },
-    {
       id: "ai-requests",
       title: "Could this be AI'd? inbox",
       icon: <Lightbulb className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <RequestsInbox requests={aiRequests ?? []} />,
-    },
-    {
-      id: "tickets",
-      title: "Support tickets",
-      icon: <LifeBuoy className="h-5 w-5" strokeWidth={2} aria-hidden />,
-      content: <TicketsInbox tickets={tickets ?? []} />,
     },
     {
       id: "agency-policies",

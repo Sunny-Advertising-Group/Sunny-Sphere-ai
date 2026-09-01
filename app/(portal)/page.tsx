@@ -41,16 +41,13 @@ export default async function DashboardPage() {
   ]);
 
   let pendingTools = 0;
-  let openTickets = 0;
   let newAiRequests = 0;
   if (isAdmin) {
-    const [{ count: pt }, { count: ot }, { count: nar }] = await Promise.all([
+    const [{ count: pt }, { count: nar }] = await Promise.all([
       supabase.from("tools").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
       supabase.from("ai_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
     ]);
     pendingTools = pt ?? 0;
-    openTickets = ot ?? 0;
     newAiRequests = nar ?? 0;
   }
 
@@ -279,7 +276,7 @@ export default async function DashboardPage() {
             <h2 className="text-sm font-bold text-ink">Admin queue</h2>
             <Pill tone="gold">Admin</Pill>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Link href="/admin">
               <Card className="transition-colors hover:border-gold/50">
                 <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Tools pending review</div>
@@ -290,12 +287,6 @@ export default async function DashboardPage() {
               <Card className="transition-colors hover:border-gold/50">
                 <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">New AI&rsquo;d requests</div>
                 <div className="mt-3 text-3xl font-extrabold text-ink">{newAiRequests}</div>
-              </Card>
-            </Link>
-            <Link href="/admin">
-              <Card className="transition-colors hover:border-gold/50">
-                <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Open support tickets</div>
-                <div className="mt-3 text-3xl font-extrabold text-ink">{openTickets}</div>
               </Card>
             </Link>
           </div>
