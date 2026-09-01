@@ -14,6 +14,7 @@ import {
   type ChecklistLogInput,
 } from "@/lib/atl";
 import { logAtlChecklist, unlogAtlChecklist } from "./actions";
+import { LoaLinks, type LoaLink } from "./LoaLinks";
 
 const TEAM_ORDER = ["ATL", "Digital", "Comms"];
 
@@ -41,10 +42,14 @@ export function AtlHub({
   clients,
   links,
   checklistLogs,
+  loaLinks,
+  isAdmin,
 }: {
   clients: ClientRow[];
   links: LinkRow[];
   checklistLogs: ChecklistLogInput[];
+  loaLinks: LoaLink[];
+  isAdmin: boolean;
 }) {
   const [view, setView] = useState<"checklist" | "client" | "category">("checklist");
   const [openKinds, setOpenKinds] = useState<Set<string>>(new Set());
@@ -149,7 +154,10 @@ export function AtlHub({
 
       <div className="space-y-10 p-8">
         {view === "checklist" ? (
-          <ChecklistBoard cards={checklist.cards} completionPct={checklist.completionPct} totalDone={checklist.totalDone} totalActive={checklist.totalActive} onTick={tick} onUntick={untick} />
+          <div className="space-y-4">
+            <LoaLinks items={loaLinks} isAdmin={isAdmin} />
+            <ChecklistBoard cards={checklist.cards} completionPct={checklist.completionPct} totalDone={checklist.totalDone} totalActive={checklist.totalActive} onTick={tick} onUntick={untick} />
+          </div>
         ) : view === "client" ? (
           byTeam.map((group) => (
             <div key={group.team}>
