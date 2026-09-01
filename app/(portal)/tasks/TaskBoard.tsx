@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import {
   AlignLeft,
   Calendar,
+  CalendarCheck,
   Check,
   CheckSquare,
   ChevronLeft,
@@ -47,6 +48,7 @@ import {
   deleteCategory,
   deleteChecklistItem,
   deleteTask,
+  disconnectGoogleCalendar,
   grantBoardAccess,
   moveCategory,
   recolorCategory,
@@ -70,6 +72,9 @@ export function TaskBoard({
   categories: initialCategories,
   tasks: initialTasks,
   checklistItems: initialChecklistItems,
+  googleCalendarConfigured,
+  googleCalendarConnected: initialGoogleConnected,
+  googleStatus,
 }: {
   allPeople: PersonLite[];
   viewablePeople: PersonLite[];
@@ -80,6 +85,9 @@ export function TaskBoard({
   categories: CategoryRow[];
   tasks: TaskRow[];
   checklistItems: ChecklistItem[];
+  googleCalendarConfigured: boolean;
+  googleCalendarConnected: boolean;
+  googleStatus: string | null;
 }) {
   const [categories, setCategories] = useState(initialCategories);
   const [tasks, setTasks] = useState(initialTasks);
@@ -88,11 +96,26 @@ export function TaskBoard({
   const [view, setView] = useState<View>("card");
   const [shareOpen, setShareOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [googleConnected, setGoogleConnected] = useState(initialGoogleConnected);
+  const [googleNotice, setGoogleNotice] = useState(
+    googleStatus === "connected"
+      ? "Google Calendar connected — due dates will sync from now on."
+      : googleStatus === "error"
+        ? "Couldn't connect Google Calendar. Please try again."
+        : googleStatus === "not_configured"
+          ? "Google Calendar isn't set up for Sunny Sphere yet — ask an admin."
+          : null,
+  );
   const [, startTransition] = useTransition();
 
   const isOwnBoard = boardOwnerId === myProfileId;
   const peopleById = useMemo(() => new Map(allPeople.map((p) => [p.id, p])), [allPeople]);
   const boardOwner = peopleById.get(boardOwnerId);
+
+  function disconnectGoogle() {
+    setGoogleConnected(false);
+    startTransition(async () => report(await disconnectGoogleCalendar()));
+  }
 
   const checklistByTask = useMemo(() => {
     const map = new Map<number, ChecklistItem[]>();
@@ -332,6 +355,14 @@ export function TaskBoard({
           </button>
         </div>
       )}
+      {googleNotice && (
+        <div className="flex items-center justify-between rounded-lg border border-border-c bg-bg px-4 py-2 text-sm text-ink">
+          {googleNotice}
+          <button onClick={() => setGoogleNotice(null)} aria-label="Dismiss">
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -353,6 +384,24 @@ export function TaskBoard({
         </div>
 
         <div className="flex items-center gap-2">
+          {isOwnBoard && googleCalendarConfigured && (
+            googleConnected ? (
+              <button
+                onClick={disconnectGoogle}
+                title="Disconnect Google Calendar"
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700"
+              >
+                <CalendarCheck className="h-3.5 w-3.5" strokeWidth={2} /> Google Calendar connected
+              </button>
+            ) : (
+              <a
+                href="/api/google/connect"
+                className="flex items-center gap-1.5 rounded-lg border border-border-c px-3 py-1.5 text-xs font-semibold text-charcoal hover:border-gold/50"
+              >
+                <CalendarCheck className="h-3.5 w-3.5" strokeWidth={2} /> Connect Google Calendar
+              </a>
+            )
+          )}
           {isOwnBoard && (
             <button
               onClick={() => setShareOpen((v) => !v)}

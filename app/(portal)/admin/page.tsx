@@ -1,4 +1,6 @@
 import {
+  Bell,
+  BookOpen,
   Building2,
   CheckCircle2,
   ClipboardList,
@@ -6,8 +8,7 @@ import {
   GraduationCap,
   HelpCircle,
   Lightbulb,
-  LifeBuoy,
-  MessageSquareText,
+  Link2,
   Sparkles,
   Tag,
   UserPlus,
@@ -28,9 +29,7 @@ import { ToolQueue } from "./ToolQueue";
 import { ToolCategoriesManager } from "./ToolCategoriesManager";
 import { TipQueue } from "./TipQueue";
 import { PublishedToolsList } from "./PublishedToolsList";
-import { PublishedTipsList } from "./PublishedTipsList";
 import { RequestsInbox } from "./RequestsInbox";
-import { TicketsInbox } from "./TicketsInbox";
 import { PeopleTable, type Person } from "./PeopleTable";
 import { TwoFactorSetup } from "./TwoFactorSetup";
 import { ResourceList } from "./ResourceList";
@@ -52,13 +51,16 @@ export default async function AdminPage({
     { data: pendingTools },
     { data: publishedTools },
     { data: pendingTips },
-    { data: publishedTips },
     { data: aiRequests },
-    { data: tickets },
     { data: profiles },
     { data: grants },
     { data: policies },
+    { data: keyResources },
     { data: faqs },
+    { data: acronyms },
+    { data: dashboardDocs },
+    { data: dashboardNotifications },
+    { data: dashboardLinks },
     { data: learningPaths },
     { data: loomVideos },
     { data: clients },
@@ -88,25 +90,20 @@ export default async function AdminPage({
       .eq("status", "pending")
       .order("created_at"),
     supabase
-      .from("tips")
-      .select("id, title, body, is_prompt")
-      .eq("status", "published")
-      .order("created_at", { ascending: false }),
-    supabase
       .from("ai_requests")
       .select("id, task, frequency, hours_estimate, status")
       .neq("status", "shipped")
       .neq("status", "parked")
       .order("created_at", { ascending: false }),
-    supabase
-      .from("support_tickets")
-      .select("id, body, category, urgency, status")
-      .neq("status", "resolved")
-      .order("created_at", { ascending: false }),
     supabase.from("profiles").select("id, email, full_name, team, role").order("email"),
     supabase.from("section_access").select("user_id, section"),
     supabase.from("resources").select("*").eq("section", "policy").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "key_resource").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "faq").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "acronym").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "dashboard_doc").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "dashboard_notification").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "dashboard_link").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "learning_path").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "loom").order("sort_order"),
     supabase
@@ -224,22 +221,10 @@ export default async function AdminPage({
       content: <TipQueue tips={pendingTips ?? []} />,
     },
     {
-      id: "tips-published",
-      title: "Published tips & prompts",
-      icon: <MessageSquareText className="h-5 w-5" strokeWidth={2} aria-hidden />,
-      content: <PublishedTipsList tips={publishedTips ?? []} />,
-    },
-    {
       id: "ai-requests",
       title: "Could this be AI'd? inbox",
       icon: <Lightbulb className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <RequestsInbox requests={aiRequests ?? []} />,
-    },
-    {
-      id: "tickets",
-      title: "Support tickets",
-      icon: <LifeBuoy className="h-5 w-5" strokeWidth={2} aria-hidden />,
-      content: <TicketsInbox tickets={tickets ?? []} />,
     },
     {
       id: "agency-policies",
@@ -255,6 +240,19 @@ export default async function AdminPage({
       ),
     },
     {
+      id: "agency-key-resources",
+      title: "Agency — key resources",
+      icon: <Sparkles className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="key_resource" label="+ Add key resource" />
+          </div>
+          <ResourceList items={keyResources ?? []} />
+        </>
+      ),
+    },
+    {
       id: "agency-faqs",
       title: "Agency — FAQs",
       icon: <HelpCircle className="h-5 w-5" strokeWidth={2} aria-hidden />,
@@ -264,6 +262,62 @@ export default async function AdminPage({
             <AddResourceForm section="faq" label="+ Add FAQ" showBody />
           </div>
           <ResourceList items={faqs ?? []} showBody />
+        </>
+      ),
+    },
+    {
+      id: "agency-acronyms",
+      title: "Agency — acronym library",
+      icon: <BookOpen className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="acronym" label="+ Add acronym" showBody />
+          </div>
+          <ResourceList items={acronyms ?? []} showBody />
+        </>
+      ),
+    },
+    {
+      id: "dashboard-docs",
+      title: "Dashboard — important docs",
+      icon: <FileText className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="dashboard_doc" label="+ Add doc" />
+          </div>
+          <ResourceList items={dashboardDocs ?? []} />
+        </>
+      ),
+    },
+    {
+      id: "dashboard-notifications",
+      title: "Dashboard — notifications",
+      icon: <Bell className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="dashboard_notification" label="+ Add notification" showBody />
+          </div>
+          <ResourceList items={dashboardNotifications ?? []} showBody />
+        </>
+      ),
+    },
+    {
+      id: "dashboard-links",
+      title: "Dashboard — quick links",
+      icon: <Link2 className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            {(dashboardLinks?.length ?? 0) < 5 ? (
+              <AddResourceForm section="dashboard_link" label="+ Add link" />
+            ) : (
+              <p className="text-xs text-charcoal">Quick links are capped at 5 — delete one below to add another.</p>
+            )}
+          </div>
+          <ResourceList items={dashboardLinks ?? []} />
         </>
       ),
     },

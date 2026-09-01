@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { hasGoogleConnection, isGoogleCalendarConfigured } from "@/lib/googleCalendar";
 import { PageHeader } from "@/components/ui";
 import type { CategoryRow, ChecklistItem, ClientLite, PersonLite, TaskRow } from "@/lib/tasks";
 import { TaskBoard } from "./TaskBoard";
@@ -8,14 +9,14 @@ import { TaskBoard } from "./TaskBoard";
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ board?: string }>;
+  searchParams: Promise<{ board?: string; google?: string }>;
 }) {
   const visibility = await getVisibility();
   if (!visibility) redirect("/login");
 
   const supabase = await createClient();
   const { profile } = visibility;
-  const { board: requestedBoard } = await searchParams;
+  const { board: requestedBoard, google: googleStatus } = await searchParams;
 
   // `categories` only ever returns rows RLS lets this user see — their own
   // board, any board they've been granted (task_board_access), or every
@@ -76,6 +77,9 @@ export default async function TasksPage({
           .in("task_id", taskIds)
           .order("position");
 
+  const googleCalendarConfigured = isGoogleCalendarConfigured();
+  const googleCalendarConnected = googleCalendarConfigured ? await hasGoogleConnection(profile.id) : false;
+
   return (
     <div>
       <PageHeader
@@ -92,6 +96,9 @@ export default async function TasksPage({
         categories={boardCategories}
         tasks={(tasks ?? []) as TaskRow[]}
         checklistItems={(checklistItems ?? []) as ChecklistItem[]}
+        googleCalendarConfigured={googleCalendarConfigured}
+        googleCalendarConnected={googleCalendarConnected}
+        googleStatus={googleStatus ?? null}
       />
     </div>
   );

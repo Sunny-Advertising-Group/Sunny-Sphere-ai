@@ -1,3 +1,5 @@
+import { isLoggedForCurrentPeriod, lastLoggedAt } from "./digitalOpti";
+
 export const KIND_LABELS: Record<string, string> = {
   flight_plan: "Flight plan",
   wip: "WIP",
@@ -147,4 +149,104 @@ const LIVE_MATERIAL_STATUS_CLASSNAMES: Record<string, string> = {
 export function liveMaterialStatusClassName(status: string | null): string {
   if (!status) return "text-charcoal bg-black/5";
   return LIVE_MATERIAL_STATUS_CLASSNAMES[status.trim().toLowerCase()] ?? "text-charcoal bg-black/5";
+}
+
+// --- Checklist tab: tick-per-period, same mechanism as Digital Opti (see
+// periodStart/isLoggedForCurrentPeriod/lastLoggedAt in lib/digitalOpti.ts —
+// those are cadence-generic, not Digital-specific, so reused as-is here) but
+// keyed on each atl_link's own cadence rather than a client-level one.
+
+export type ChecklistLinkInput = {
+  id: number;
+  clientId: number;
+  clientName: string;
+  clientColour: string | null;
+  kind: string;
+  title: string;
+  cadence: string | null;
+};
+
+export type ChecklistLogInput = { atl_link_id: number; completed_at: string; voided_at: string | null };
+
+export type ChecklistCard = ChecklistLinkInput & {
+  cadence: string;
+  done: boolean;
+  lastLoggedAt: string | null;
+};
+
+export type ChecklistData = {
+  cards: ChecklistCard[];
+  completionPct: number;
+  totalDone: number;
+  totalActive: number;
+};
+
+export function buildAtlChecklistData(
+  links: ChecklistLinkInput[],
+  logs: ChecklistLogInput[],
+  now: Date = new Date(),
+): ChecklistData {
+  const logsByLink = new Map<number, { completed_at: string; voided_at: string | null }[]>();
+  for (const log of logs) {
+    const arr = logsByLink.get(log.atl_link_id) ?? [];
+    arr.push({ completed_at: log.completed_at, voided_at: log.voided_at });
+    logsByLink.set(log.atl_link_id, arr);
+  }
+
+  let totalDone = 0;
+  const cards: ChecklistCard[] = links
+    .filter((l): l is ChecklistLinkInput & { cadence: string } => !!l.cadence && l.cadence !== "none")
+    .map((l) => {
+      const linkLogs = logsByLink.get(l.id) ?? [];
+      const done = isLoggedForCurrentPeriod(l.cadence, linkLogs, now);
+      if (done) totalDone += 1;
+      return { ...l, done, lastLoggedAt: lastLoggedAt(linkLogs) };
+    })
+    .sort((a, b) => a.clientName.localeCompare(b.clientName) || a.title.localeCompare(b.title));
+
+  return {
+    cards,
+    completionPct: cards.length === 0 ? 0 : Math.round((totalDone / cards.length) * 100),
+    totalDone,
+    totalActive: cards.length,
+  };
+}
+
+export type ChecklistClientGroup = {
+  clientId: number;
+  clientName: string;
+  clientColour: string | null;
+  cadences: string[];
+  items: ChecklistCard[];
+  allDone: boolean;
+};
+
+// One row per client for the Checklist tab — every one of that client's
+// cadenced links (WIP, Flight plan, etc.) becomes its own tick chip on that
+// same row, with the row's cadence(s) shown under the client name.
+export function groupChecklistByClient(cards: ChecklistCard[]): ChecklistClientGroup[] {
+  const cadenceOrder = CADENCE_OPTIONS.map((c) => c.value);
+  const map = new Map<number, ChecklistClientGroup>();
+
+  for (const card of cards) {
+    const group = map.get(card.clientId) ?? {
+      clientId: card.clientId,
+      clientName: card.clientName,
+      clientColour: card.clientColour,
+      cadences: [],
+      items: [],
+      allDone: true,
+    };
+    group.items.push(card);
+    if (!group.cadences.includes(card.cadence)) group.cadences.push(card.cadence);
+    map.set(card.clientId, group);
+  }
+
+  const groups = Array.from(map.values());
+  for (const group of groups) {
+    group.allDone = group.items.every((item) => item.done);
+    group.items.sort((a, b) => a.title.localeCompare(b.title));
+    group.cadences.sort((a, b) => cadenceOrder.indexOf(a) - cadenceOrder.indexOf(b));
+  }
+  return groups.sort((a, b) => a.clientName.localeCompare(b.clientName));
 }

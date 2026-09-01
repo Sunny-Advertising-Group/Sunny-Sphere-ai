@@ -2,7 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { DEFAULT_CATEGORY_COLOR, type CategoryColorKey, type TaskLink } from "@/lib/tasks";
+import {
+  deleteTaskCalendarEvent,
+  removeGoogleConnection,
+  syncTaskCalendarEvent,
+  type CalendarSyncTask,
+} from "@/lib/googleCalendar";
 
 async function requireUser() {
   const supabase = await createClient();
@@ -10,6 +17,47 @@ async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser();
   return { supabase, user };
+}
+
+// Re-syncs a task's Google Calendar event after any mutation that could
+// affect it (due date, tagging, completion). Whoever the task currently
+// belongs to — the tagged assignee if any, otherwise the column owner —
+// gets the event on their own calendar, if they've connected one. Never
+// throws: a sync failure shouldn't block the task action that triggered it.
+async function resyncTaskCalendar(taskId: number) {
+  try {
+    const admin = createAdminClient();
+    const { data: task } = await admin
+      .from("tasks")
+      .select(
+        "id, title, description, due_date, completed_at, assigned_to, google_event_id, google_calendar_owner_id, category:task_categories(owner_id)",
+      )
+      .eq("id", taskId)
+      .single();
+    if (!task) return;
+
+    const categoryOwnerId = (task.category as unknown as { owner_id: string } | null)?.owner_id;
+    if (!categoryOwnerId) return;
+    const calendarOwnerId = task.assigned_to ?? categoryOwnerId;
+
+    const syncInput: CalendarSyncTask = {
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      due_date: task.completed_at ? null : task.due_date,
+      google_event_id: task.google_event_id,
+      google_calendar_owner_id: task.google_calendar_owner_id,
+    };
+    const result = await syncTaskCalendarEvent(syncInput, calendarOwnerId);
+    if (result.google_event_id !== task.google_event_id || result.google_calendar_owner_id !== task.google_calendar_owner_id) {
+      await admin
+        .from("tasks")
+        .update({ google_event_id: result.google_event_id, google_calendar_owner_id: result.google_calendar_owner_id })
+        .eq("id", taskId);
+    }
+  } catch (err) {
+    console.error("[tasks] calendar resync failed:", err);
+  }
 }
 
 // --- Categories (columns on a profile's own board) ---
@@ -139,6 +187,7 @@ export async function createTask(input: CreateTaskInput) {
     .single();
   if (error) return { error: error.message };
 
+  await resyncTaskCalendar(data.id);
   revalidatePath("/tasks");
   return { success: true, task: data };
 }
@@ -175,6 +224,7 @@ export async function updateTask(
   const { error } = await supabase.from("tasks").update(patch).eq("id", id);
   if (error) return { error: error.message };
 
+  if (fields.dueDate !== undefined || fields.assigneeId !== undefined) await resyncTaskCalendar(id);
   revalidatePath("/tasks");
   return { success: true };
 }
@@ -184,6 +234,7 @@ export async function completeTask(id: number) {
   const { error } = await supabase.from("tasks").update({ completed_at: new Date().toISOString() }).eq("id", id);
   if (error) return { error: error.message };
 
+  await resyncTaskCalendar(id);
   revalidatePath("/tasks");
   return { success: true };
 }
@@ -193,15 +244,23 @@ export async function uncompleteTask(id: number) {
   const { error } = await supabase.from("tasks").update({ completed_at: null }).eq("id", id);
   if (error) return { error: error.message };
 
+  await resyncTaskCalendar(id);
   revalidatePath("/tasks");
   return { success: true };
 }
 
 export async function deleteTask(id: number) {
   const { supabase } = await requireUser();
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("id, title, description, due_date, google_event_id, google_calendar_owner_id")
+    .eq("id", id)
+    .single();
+
   const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) return { error: error.message };
 
+  if (task) await deleteTaskCalendarEvent(task).catch(() => {});
   revalidatePath("/tasks");
   return { success: true };
 }
@@ -301,6 +360,17 @@ export async function revokeBoardAccess(viewerId: string) {
     .eq("viewer_id", viewerId);
   if (error) return { error: error.message };
 
+  revalidatePath("/tasks");
+  return { success: true };
+}
+
+// --- Google Calendar connection ---
+
+export async function disconnectGoogleCalendar() {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not authenticated." };
+
+  await removeGoogleConnection(user.id);
   revalidatePath("/tasks");
   return { success: true };
 }

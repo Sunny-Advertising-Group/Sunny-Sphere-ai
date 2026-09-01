@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Sun } from "lucide-react";
+import { Bell, ExternalLink, FileText, Link2, Sun } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { Card, Pill } from "@/components/ui";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import { currentInstant, lookbackIsoDate } from "@/lib/digitalOpti";
 import { buildOutstandingItems, type AtlTaskInput, type DigitalTaskInput } from "@/lib/dashboardTasks";
 
@@ -12,28 +13,41 @@ const LOG_LOOKBACK_DAYS = 100;
 export default async function DashboardPage() {
   const visibility = await getVisibility();
   if (!visibility) redirect("/login");
-  const { profile, isAdmin, canSee } = visibility;
+  const { profile, isAdmin } = visibility;
 
   const supabase = await createClient();
   const now = currentInstant();
 
-  const [{ count: publishedTools }, { count: myRequests }, { count: recentTips }] = await Promise.all([
+  const [
+    { count: publishedTools },
+    { count: myRequests },
+    { data: dashboardDocs },
+    { data: dashboardNotifications },
+    { data: dashboardLinks },
+  ] = await Promise.all([
     supabase.from("tools").select("id", { count: "exact", head: true }).eq("status", "published"),
     supabase.from("ai_requests").select("id", { count: "exact", head: true }).eq("submitted_by", profile.id),
-    supabase.from("tips").select("id", { count: "exact", head: true }),
+    supabase
+      .from("resources")
+      .select("id, title, description, url, resource_type")
+      .eq("section", "dashboard_doc")
+      .order("sort_order"),
+    supabase
+      .from("resources")
+      .select("id, title, body")
+      .eq("section", "dashboard_notification")
+      .order("sort_order"),
+    supabase.from("resources").select("id, title, url").eq("section", "dashboard_link").order("sort_order"),
   ]);
 
   let pendingTools = 0;
-  let openTickets = 0;
   let newAiRequests = 0;
   if (isAdmin) {
-    const [{ count: pt }, { count: ot }, { count: nar }] = await Promise.all([
+    const [{ count: pt }, { count: nar }] = await Promise.all([
       supabase.from("tools").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
       supabase.from("ai_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
     ]);
     pendingTools = pt ?? 0;
-    openTickets = ot ?? 0;
     newAiRequests = nar ?? 0;
   }
 
@@ -129,27 +143,6 @@ export default async function DashboardPage() {
       hint: "your submissions",
       show: true,
     },
-    {
-      href: "/tips",
-      label: "Tips & Prompts",
-      value: recentTips ?? 0,
-      hint: "shared so far",
-      show: true,
-    },
-    {
-      href: "/atl",
-      label: "ATL",
-      value: "→",
-      hint: "clients & live material",
-      show: canSee("atl"),
-    },
-    {
-      href: "/digital-opti",
-      label: "Digital",
-      value: "→",
-      hint: "cadence & optimisation log",
-      show: canSee("digital_opti"),
-    },
   ];
 
   return (
@@ -160,9 +153,75 @@ export default async function DashboardPage() {
           <Sun className="h-7 w-7 text-gold" strokeWidth={2} aria-hidden />
         </h1>
         <p className="mt-1 text-sm text-charcoal">Here&rsquo;s what&rsquo;s happening in Sunny Sphere.</p>
+        <div className="mt-4">
+          <GlobalSearch />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 p-8 sm:grid-cols-2 lg:grid-cols-4">
+      {dashboardNotifications && dashboardNotifications.length > 0 && (
+        <div className="space-y-2 px-8 pt-8">
+          {dashboardNotifications.map((n) => (
+            <div key={n.id} className="flex items-start gap-3 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3">
+              <Bell className="mt-0.5 h-4 w-4 flex-none text-gold" strokeWidth={2} aria-hidden />
+              <div>
+                <div className="font-semibold text-ink">{n.title}</div>
+                {n.body && <p className="mt-0.5 text-sm text-charcoal">{n.body}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {dashboardLinks && dashboardLinks.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-8 pt-6">
+          <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-charcoal">
+            <Link2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> Quick links
+          </span>
+          {dashboardLinks.map((link) =>
+            link.url ? (
+              <a
+                key={link.id}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-border-c bg-white px-3 py-1.5 text-xs font-semibold text-ink hover:border-gold/50"
+              >
+                {link.title}
+              </a>
+            ) : null,
+          )}
+        </div>
+      )}
+
+      {dashboardDocs && dashboardDocs.length > 0 && (
+        <div className="px-8 pt-8">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
+            <FileText className="h-4 w-4 text-gold" strokeWidth={2} aria-hidden /> Important docs
+          </h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {dashboardDocs.map((doc) =>
+              doc.url ? (
+                <a key={doc.id} href={doc.url} target="_blank" rel="noopener noreferrer">
+                  <Card className="h-full transition-colors hover:border-gold/50">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-semibold text-ink">{doc.title}</div>
+                      <ExternalLink className="h-3.5 w-3.5 flex-none text-charcoal" strokeWidth={2} aria-hidden />
+                    </div>
+                    {doc.description && <p className="mt-1 text-sm text-charcoal">{doc.description}</p>}
+                  </Card>
+                </a>
+              ) : (
+                <Card key={doc.id}>
+                  <div className="font-semibold text-ink">{doc.title}</div>
+                  {doc.description && <p className="mt-1 text-sm text-charcoal">{doc.description}</p>}
+                </Card>
+              ),
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 p-8 sm:grid-cols-2">
         {tiles
           .filter((t) => t.show)
           .map((tile) => (
@@ -217,7 +276,7 @@ export default async function DashboardPage() {
             <h2 className="text-sm font-bold text-ink">Admin queue</h2>
             <Pill tone="gold">Admin</Pill>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Link href="/admin">
               <Card className="transition-colors hover:border-gold/50">
                 <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Tools pending review</div>
@@ -228,12 +287,6 @@ export default async function DashboardPage() {
               <Card className="transition-colors hover:border-gold/50">
                 <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">New AI&rsquo;d requests</div>
                 <div className="mt-3 text-3xl font-extrabold text-ink">{newAiRequests}</div>
-              </Card>
-            </Link>
-            <Link href="/admin">
-              <Card className="transition-colors hover:border-gold/50">
-                <div className="text-xs font-semibold uppercase tracking-wide text-charcoal">Open support tickets</div>
-                <div className="mt-3 text-3xl font-extrabold text-ink">{openTickets}</div>
               </Card>
             </Link>
           </div>
