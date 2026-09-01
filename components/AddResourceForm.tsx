@@ -12,7 +12,16 @@ export function AddResourceForm({
   showBody = false,
   showDuration = false,
 }: {
-  section: "policy" | "learning_path" | "loom" | "faq" | "dashboard_doc" | "dashboard_notification" | "dashboard_link";
+  section:
+    | "policy"
+    | "learning_path"
+    | "loom"
+    | "faq"
+    | "dashboard_doc"
+    | "dashboard_notification"
+    | "dashboard_link"
+    | "key_resource"
+    | "acronym";
   label?: string;
   showBody?: boolean;
   showDuration?: boolean;

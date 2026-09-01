@@ -1,5 +1,6 @@
 import {
   Bell,
+  BookOpen,
   Building2,
   CheckCircle2,
   ClipboardList,
@@ -60,7 +61,9 @@ export default async function AdminPage({
     { data: profiles },
     { data: grants },
     { data: policies },
+    { data: keyResources },
     { data: faqs },
+    { data: acronyms },
     { data: dashboardDocs },
     { data: dashboardNotifications },
     { data: dashboardLinks },
@@ -111,7 +114,9 @@ export default async function AdminPage({
     supabase.from("profiles").select("id, email, full_name, team, role").order("email"),
     supabase.from("section_access").select("user_id, section"),
     supabase.from("resources").select("*").eq("section", "policy").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "key_resource").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "faq").order("sort_order"),
+    supabase.from("resources").select("*").eq("section", "acronym").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "dashboard_doc").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "dashboard_notification").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "dashboard_link").order("sort_order"),
@@ -263,6 +268,19 @@ export default async function AdminPage({
       ),
     },
     {
+      id: "agency-key-resources",
+      title: "Agency — key resources",
+      icon: <Sparkles className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="key_resource" label="+ Add key resource" />
+          </div>
+          <ResourceList items={keyResources ?? []} />
+        </>
+      ),
+    },
+    {
       id: "agency-faqs",
       title: "Agency — FAQs",
       icon: <HelpCircle className="h-5 w-5" strokeWidth={2} aria-hidden />,
@@ -272,6 +290,19 @@ export default async function AdminPage({
             <AddResourceForm section="faq" label="+ Add FAQ" showBody />
           </div>
           <ResourceList items={faqs ?? []} showBody />
+        </>
+      ),
+    },
+    {
+      id: "agency-acronyms",
+      title: "Agency — acronym library",
+      icon: <BookOpen className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: (
+        <>
+          <div className="mb-4">
+            <AddResourceForm section="acronym" label="+ Add acronym" showBody />
+          </div>
+          <ResourceList items={acronyms ?? []} showBody />
         </>
       ),
     },
