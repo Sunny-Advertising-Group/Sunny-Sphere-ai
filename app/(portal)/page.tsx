@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import { Card, Pill } from "@/components/ui";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import { currentInstant, lookbackIsoDate } from "@/lib/digitalOpti";
 import { buildOutstandingItems, type AtlTaskInput, type DigitalTaskInput } from "@/lib/dashboardTasks";
 
@@ -155,6 +156,9 @@ export default async function DashboardPage() {
           <Sun className="h-7 w-7 text-gold" strokeWidth={2} aria-hidden />
         </h1>
         <p className="mt-1 text-sm text-charcoal">Here&rsquo;s what&rsquo;s happening in Sunny Sphere.</p>
+        <div className="mt-4">
+          <GlobalSearch />
+        </div>
       </div>
 
       {dashboardNotifications && dashboardNotifications.length > 0 && (
