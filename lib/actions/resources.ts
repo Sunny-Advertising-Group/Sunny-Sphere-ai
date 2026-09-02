@@ -19,25 +19,37 @@ export async function addResource(_prevState: unknown, formData: FormData) {
     if ((count ?? 0) >= 5) return { error: "Quick links are capped at 5 — delete one first to add another." };
   }
 
+  // ATL LOA links are a fixed handful of small cards on the Checklist tab —
+  // one live LOA plus a couple of spare slots, not an open-ended list.
+  if (section === "atl_loa_link") {
+    const { count } = await supabase.from("resources").select("id", { count: "exact", head: true }).eq("section", "atl_loa_link");
+    if ((count ?? 0) >= 3) return { error: "LOA links are capped at 3 — delete one first to add another." };
+  }
+
   const moduleCount = formData.get("module_count");
 
-  const { error } = await supabase.from("resources").insert({
-    section,
-    group_name: String(formData.get("group_name") ?? "").trim() || null,
-    title,
-    description: String(formData.get("description") ?? "").trim() || null,
-    resource_type: String(formData.get("resource_type") ?? "").trim() || null,
-    url: String(formData.get("url") ?? "").trim() || null,
-    duration: String(formData.get("duration") ?? "").trim() || null,
-    module_count: moduleCount ? Number(moduleCount) : null,
-    body: String(formData.get("body") ?? "").trim() || null,
-  });
+  const { data: inserted, error } = await supabase
+    .from("resources")
+    .insert({
+      section,
+      group_name: String(formData.get("group_name") ?? "").trim() || null,
+      title,
+      description: String(formData.get("description") ?? "").trim() || null,
+      resource_type: String(formData.get("resource_type") ?? "").trim() || null,
+      url: String(formData.get("url") ?? "").trim() || null,
+      duration: String(formData.get("duration") ?? "").trim() || null,
+      module_count: moduleCount ? Number(moduleCount) : null,
+      body: String(formData.get("body") ?? "").trim() || null,
+    })
+    .select("id")
+    .single();
   if (error) return { error: error.message };
 
   revalidatePath("/agency");
   revalidatePath("/learning");
+  revalidatePath("/atl");
   revalidatePath("/");
-  return { success: true };
+  return { success: true, id: inserted.id };
 }
 
 export async function updateResource(_prevState: unknown, formData: FormData) {
@@ -69,6 +81,7 @@ export async function updateResource(_prevState: unknown, formData: FormData) {
   revalidatePath("/agency");
   revalidatePath("/learning");
   revalidatePath("/admin");
+  revalidatePath("/atl");
   revalidatePath("/");
   return { success: true };
 }
@@ -84,6 +97,7 @@ export async function deleteResource(id: number) {
   revalidatePath("/agency");
   revalidatePath("/learning");
   revalidatePath("/admin");
+  revalidatePath("/atl");
   revalidatePath("/");
   return { success: true };
 }
