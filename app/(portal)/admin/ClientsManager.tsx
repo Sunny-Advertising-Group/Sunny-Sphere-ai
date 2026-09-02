@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import {
   addAtlLink,
   addClient,
@@ -127,7 +127,13 @@ export function ClientsManager({
   const [digitalAssignments, setDigitalAssignments] = useState(digitalAssigneesByClient);
   const [pendingRows, setPendingRows] = useState(pendingAssignments);
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
   const [, startTransition] = useTransition();
+
+  const visibleClients = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? clientRows.filter((c) => c.name.toLowerCase().includes(q)) : clientRows;
+  }, [clientRows, search]);
 
   function removeClient(id: number) {
     if (!confirm("Delete this client entirely — ATL and Digital alike? This can't be undone.")) return;
@@ -266,10 +272,21 @@ export function ClientsManager({
     <div className="space-y-6">
       <AddClientForm tiers={tiers} onAdded={(c) => setClientRows((prev) => [...prev, c])} />
 
+      {clientRows.length > 0 && (
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search clients…"
+          className="max-w-xs"
+        />
+      )}
+
       {clientRows.length === 0 ? (
         <EmptyState title="No clients yet" />
+      ) : visibleClients.length === 0 ? (
+        <EmptyState title="No clients match your search" />
       ) : (
-        clientRows.map((client) =>
+        visibleClients.map((client) =>
           editingClientId === client.id ? (
             <EditClientForm
               key={client.id}
