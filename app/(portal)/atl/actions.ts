@@ -90,19 +90,33 @@ export async function removeClientAssignee(clientId: number, profileId: string) 
   return { success: true };
 }
 
+export type PendingAssignmentKind = "atl_assignee" | "digital_assignee" | "digital_owner" | "digital_channel_owner";
+
 // Pre-assigns a client to someone who hasn't signed up yet, by email. When a
 // profile is later created with a matching email (handle_new_user()), it's
-// applied straight into atl_client_assignees/digital_client_assignees and
-// this row is cleared — see the pending_client_assignments migration.
-export async function addPendingAssignee(clientId: number, email: string, section: "atl" | "digital") {
+// applied straight into the real assignment table (atl_client_assignees,
+// digital_client_assignees, digital_client_owners or digital_channel_owners)
+// and this row is cleared — see the pending_client_assignments migration.
+export async function addPendingAssignee(
+  clientId: number,
+  email: string,
+  kind: PendingAssignmentKind,
+  extra?: { channel?: string; splitPct?: number },
+) {
   const supabase = await createClient();
   const trimmed = email.trim().toLowerCase();
   if (!trimmed) return { error: "Give an email address." };
 
   const { data, error } = await supabase
     .from("pending_client_assignments")
-    .insert({ client_id: clientId, email: trimmed, section })
-    .select("id, email, client_id, section")
+    .insert({
+      client_id: clientId,
+      email: trimmed,
+      kind,
+      channel: extra?.channel ?? null,
+      split_pct: extra?.splitPct ?? null,
+    })
+    .select("id, email, client_id, kind, channel, split_pct")
     .single();
   if (error) return { error: error.message };
 
