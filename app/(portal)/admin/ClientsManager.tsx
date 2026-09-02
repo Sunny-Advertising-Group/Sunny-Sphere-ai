@@ -129,17 +129,28 @@ export function ClientsManager({
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [tierFilter, setTierFilter] = useState(""); // "" = all, "none" = no tier, else a tier id
+  const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set()); // empty = all teams
   const [, startTransition] = useTransition();
+
+  function toggleTeamFilter(team: string) {
+    setTeamFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(team)) next.delete(team);
+      else next.add(team);
+      return next;
+    });
+  }
 
   const visibleClients = useMemo(() => {
     const q = search.trim().toLowerCase();
     return clientRows.filter((c) => {
       if (q && !c.name.toLowerCase().includes(q)) return false;
+      if (teamFilter.size > 0 && !teamFilter.has(c.team)) return false;
       if (tierFilter === "none" && c.digital_tier_id != null) return false;
       if (tierFilter && tierFilter !== "none" && String(c.digital_tier_id ?? "") !== tierFilter) return false;
       return true;
     });
-  }, [clientRows, search, tierFilter]);
+  }, [clientRows, search, tierFilter, teamFilter]);
 
   function removeClient(id: number) {
     if (!confirm("Delete this client entirely — ATL and Digital alike? This can't be undone.")) return;
@@ -295,6 +306,22 @@ export function ClientsManager({
             ))}
             <option value="none">No tier</option>
           </Select>
+          <div className="flex items-center gap-1.5">
+            {TEAMS.map((team) => (
+              <button
+                key={team}
+                type="button"
+                onClick={() => toggleTeamFilter(team)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  teamFilter.has(team)
+                    ? "border-gold bg-gold text-ink"
+                    : "border-border-c text-charcoal hover:border-gold/50"
+                }`}
+              >
+                {team}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
