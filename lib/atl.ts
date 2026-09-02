@@ -10,6 +10,7 @@ export const KIND_LABELS: Record<string, string> = {
   wag_spends: "WAG spends",
   whatagraph_report: "Whatagraph report and reporting dashboard",
   creative_brief: "Creative brief",
+  research: "Research",
   live_material_tracker: "Live material tracker",
   // Lincoln Place splits both media plan and live material by state rather
   // than having one link per kind — these keep the admin dropdown and the
@@ -33,6 +34,7 @@ export const KIND_ORDER = [
   "wag_spends",
   "whatagraph_report",
   "creative_brief",
+  "research",
   "live_material_tracker",
   "nsw_media_plan",
   "qld_media_plan",
