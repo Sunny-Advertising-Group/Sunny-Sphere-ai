@@ -10,8 +10,6 @@ import {
   Link2,
   Sparkles,
   Tag,
-  UserPlus,
-  Users,
   Video,
   Wrench,
 } from "lucide-react";
@@ -191,12 +189,6 @@ export default async function AdminPage({
 
   const sections: SectionCardDef[] = [
     {
-      id: "invite",
-      title: "Invite someone",
-      icon: <UserPlus className="h-5 w-5" strokeWidth={2} aria-hidden />,
-      content: <InviteForm />,
-    },
-    {
       id: "tools-pending",
       title: "Tools pending review",
       icon: <Wrench className="h-5 w-5" strokeWidth={2} aria-hidden />,
@@ -355,25 +347,19 @@ export default async function AdminPage({
       icon: <ClipboardList className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <DigitalOptiLogViewer logs={optiLogs} />,
     },
-    {
-      id: "people",
-      title: "People & access",
-      icon: <Users className="h-5 w-5" strokeWidth={2} aria-hidden />,
-      content: (
-        <>
-          <TwoFactorSetup hasTotp={hasTotp} />
-          <PeopleTable people={people} currentUserId={visibility.profile.id} />
-        </>
-      ),
-    },
   ];
 
   return (
     <div>
       <PageHeader title="Admin" description="Everything content-related lives here — invites, review queues, and full add/edit/delete for every section." />
       <AdminTabs
-        initialTab={section === "clients" ? "clients" : "sections"}
-        sectionsContent={<SectionCardGrid sections={sections} initialSectionId={section && section !== "clients" ? section : null} />}
+        initialTab={section === "clients" ? "clients" : section === "people" ? "people" : "sections"}
+        sectionsContent={
+          <SectionCardGrid
+            sections={sections}
+            initialSectionId={section && section !== "clients" && section !== "people" ? section : null}
+          />
+        }
         clientsContent={
           <ClientsManager
             clients={clients ?? []}
@@ -387,6 +373,13 @@ export default async function AdminPage({
             people={personOptions}
             tiers={tiers ?? []}
           />
+        }
+        peopleContent={
+          <div className="space-y-6">
+            <InviteForm />
+            <TwoFactorSetup hasTotp={hasTotp} />
+            <PeopleTable people={people} currentUserId={visibility.profile.id} />
+          </div>
         }
       />
     </div>

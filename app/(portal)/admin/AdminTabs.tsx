@@ -1,44 +1,51 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Building2, LayoutGrid } from "lucide-react";
+import { Building2, LayoutGrid, Users } from "lucide-react";
 
-// Clients — ATL & Digital outgrew the click-to-open-a-modal card grid (it's
-// a full management surface with nested pickers, not a quick add/edit form),
-// so it gets its own top-level tab instead. Everything else stays in the
-// grid under "Sections".
+type Tab = "sections" | "clients" | "people";
+
+const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
+  { key: "sections", label: "Sections", icon: LayoutGrid },
+  { key: "clients", label: "Clients — ATL & Digital", icon: Building2 },
+  { key: "people", label: "People, access & invites", icon: Users },
+];
+
+// Clients — ATL & Digital and People, access & invites both outgrew the
+// click-to-open-a-modal card grid (full management surfaces with nested
+// pickers/tables, not a quick add/edit form), so they get their own
+// top-level tabs instead. Everything else stays in the grid under
+// "Sections".
 export function AdminTabs({
   initialTab = "sections",
   sectionsContent,
   clientsContent,
+  peopleContent,
 }: {
-  initialTab?: "sections" | "clients";
+  initialTab?: Tab;
   sectionsContent: ReactNode;
   clientsContent: ReactNode;
+  peopleContent: ReactNode;
 }) {
-  const [tab, setTab] = useState<"sections" | "clients">(initialTab);
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const content = tab === "sections" ? sectionsContent : tab === "clients" ? clientsContent : peopleContent;
 
   return (
     <div>
-      <div className="flex gap-2 border-b border-border-c bg-white px-8 py-4">
-        <button
-          onClick={() => setTab("sections")}
-          className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-            tab === "sections" ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
-          }`}
-        >
-          <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> Sections
-        </button>
-        <button
-          onClick={() => setTab("clients")}
-          className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-            tab === "clients" ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
-          }`}
-        >
-          <Building2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> Clients — ATL & Digital
-        </button>
+      <div className="flex flex-wrap gap-2 border-b border-border-c bg-white px-8 py-4">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+              tab === t.key ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
+            }`}
+          >
+            <t.icon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> {t.label}
+          </button>
+        ))}
       </div>
-      <div className="p-8">{tab === "sections" ? sectionsContent : clientsContent}</div>
+      <div className="p-8">{content}</div>
     </div>
   );
 }

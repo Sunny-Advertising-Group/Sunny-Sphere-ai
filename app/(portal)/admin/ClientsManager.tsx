@@ -128,12 +128,18 @@ export function ClientsManager({
   const [pendingRows, setPendingRows] = useState(pendingAssignments);
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [tierFilter, setTierFilter] = useState(""); // "" = all, "none" = no tier, else a tier id
   const [, startTransition] = useTransition();
 
   const visibleClients = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? clientRows.filter((c) => c.name.toLowerCase().includes(q)) : clientRows;
-  }, [clientRows, search]);
+    return clientRows.filter((c) => {
+      if (q && !c.name.toLowerCase().includes(q)) return false;
+      if (tierFilter === "none" && c.digital_tier_id != null) return false;
+      if (tierFilter && tierFilter !== "none" && String(c.digital_tier_id ?? "") !== tierFilter) return false;
+      return true;
+    });
+  }, [clientRows, search, tierFilter]);
 
   function removeClient(id: number) {
     if (!confirm("Delete this client entirely — ATL and Digital alike? This can't be undone.")) return;
@@ -273,12 +279,23 @@ export function ClientsManager({
       <AddClientForm tiers={tiers} onAdded={(c) => setClientRows((prev) => [...prev, c])} />
 
       {clientRows.length > 0 && (
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search clients…"
-          className="max-w-xs"
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search clients…"
+            className="max-w-xs"
+          />
+          <Select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} className="w-40">
+            <option value="">All tiers</option>
+            {tiers.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+            <option value="none">No tier</option>
+          </Select>
+        </div>
       )}
 
       {clientRows.length === 0 ? (
