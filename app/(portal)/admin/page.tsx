@@ -66,6 +66,7 @@ export default async function AdminPage({
     { data: clients },
     { data: atlLinks },
     { data: atlAssignees },
+    { data: pendingAssignments },
     { data: digitalChannels },
     { data: digitalAssignees },
     { data: channelOwners },
@@ -114,6 +115,7 @@ export default async function AdminPage({
       .order("name"),
     supabase.from("atl_links").select("id, client_id, kind, title, url, version_label, cadence").order("sort_order"),
     supabase.from("atl_client_assignees").select("client_id, profile_id"),
+    supabase.from("pending_client_assignments").select("id, email, client_id, kind, channel, split_pct").order("created_at"),
     supabase.from("digital_client_channels").select("id, client_id, channel, is_active"),
     supabase.from("digital_client_assignees").select("client_id, profile_id"),
     supabase.from("digital_channel_owners").select("id, client_channel_id, profile_id"),
@@ -358,6 +360,7 @@ export default async function AdminPage({
           channels={digitalChannels ?? []}
           atlAssigneesByClient={atlAssigneesByClient}
           digitalAssigneesByClient={digitalAssigneesByClient}
+          pendingAssignments={pendingAssignments ?? []}
           channelOwners={channelOwners ?? []}
           clientOwners={clientOwners ?? []}
           people={personOptions}

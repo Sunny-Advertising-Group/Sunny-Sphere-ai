@@ -5,9 +5,11 @@ import {
   addAtlLink,
   addClient,
   addClientAssignee,
+  addPendingAssignee,
   deleteAtlLink,
   deleteClient,
   removeClientAssignee,
+  removePendingAssignee,
   updateAtlLink,
   updateClient,
 } from "../atl/actions";
@@ -80,12 +82,26 @@ export type ChannelOwnerRow = { id: number; client_channel_id: number; profile_i
 
 export type ClientOwnerRow = { id: number; client_id: number; profile_id: string; split_pct: number };
 
+// A client-person assignment pre-staged for someone by email before they
+// have an account — applied automatically into the matching assignment
+// table the moment a profile with that email is created (see
+// handle_new_user() and the pending_client_assignments migration).
+export type PendingRow = {
+  id: number;
+  email: string;
+  client_id: number;
+  kind: "atl_assignee" | "digital_assignee" | "digital_owner" | "digital_channel_owner";
+  channel: string | null;
+  split_pct: number | null;
+};
+
 export function ClientsManager({
   clients,
   links,
   channels,
   atlAssigneesByClient,
   digitalAssigneesByClient,
+  pendingAssignments,
   channelOwners,
   clientOwners,
   people,
@@ -96,6 +112,7 @@ export function ClientsManager({
   channels: ChannelRow[];
   atlAssigneesByClient: Record<number, string[]>;
   digitalAssigneesByClient: Record<number, string[]>;
+  pendingAssignments: PendingRow[];
   channelOwners: ChannelOwnerRow[];
   clientOwners: ClientOwnerRow[];
   people: PersonOption[];
@@ -108,6 +125,7 @@ export function ClientsManager({
   const [clientOwnerRows, setClientOwnerRows] = useState(clientOwners);
   const [atlAssignments, setAtlAssignments] = useState(atlAssigneesByClient);
   const [digitalAssignments, setDigitalAssignments] = useState(digitalAssigneesByClient);
+  const [pendingRows, setPendingRows] = useState(pendingAssignments);
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
   const [, startTransition] = useTransition();
 
@@ -153,6 +171,32 @@ export function ClientsManager({
     }));
     startTransition(async () => {
       await removeDigitalClientAssignee(clientId, profileId);
+    });
+  }
+
+  function addPending(
+    clientId: number,
+    email: string,
+    kind: PendingRow["kind"],
+    extra?: { channel?: string; splitPct?: number },
+  ) {
+    const tempId = nextTempId();
+    setPendingRows((prev) => [
+      ...prev,
+      { id: tempId, email, client_id: clientId, kind, channel: extra?.channel ?? null, split_pct: extra?.splitPct ?? null },
+    ]);
+    startTransition(async () => {
+      const result = await addPendingAssignee(clientId, email, kind, extra);
+      const created = (result as { pending?: PendingRow } | undefined)?.pending;
+      if (created) setPendingRows((prev) => prev.map((p) => (p.id === tempId ? created : p)));
+      else setPendingRows((prev) => prev.filter((p) => p.id !== tempId));
+    });
+  }
+
+  function removePending(id: number) {
+    setPendingRows((prev) => prev.filter((p) => p.id !== id));
+    startTransition(async () => {
+      await removePendingAssignee(id);
     });
   }
 
@@ -291,6 +335,11 @@ export function ClientsManager({
                       onAdd={(profileId) => assignAtl(client.id, profileId)}
                       onRemove={(profileId) => unassignAtl(client.id, profileId)}
                     />
+                    <PendingEmailPicker
+                      pending={pendingRows.filter((p) => p.client_id === client.id && p.kind === "atl_assignee")}
+                      onAdd={(email) => addPending(client.id, email, "atl_assignee")}
+                      onRemove={removePending}
+                    />
                   </div>
                   <div className="space-y-2">
                     {linkRows
@@ -324,14 +373,22 @@ export function ClientsManager({
                       onAdd={(profileId) => assignDigital(client.id, profileId)}
                       onRemove={(profileId) => unassignDigital(client.id, profileId)}
                     />
+                    <PendingEmailPicker
+                      pending={pendingRows.filter((p) => p.client_id === client.id && p.kind === "digital_assignee")}
+                      onAdd={(email) => addPending(client.id, email, "digital_assignee")}
+                      onRemove={removePending}
+                    />
                   </div>
                   <div className="mb-3">
                     <ClientRetainerSplitEditor
                       owners={clientOwnerRows.filter((o) => o.client_id === client.id)}
+                      pending={pendingRows.filter((p) => p.client_id === client.id && p.kind === "digital_owner")}
                       people={people}
                       onAdd={(profileId, splitPct) => addClientOwnerSplit(client.id, profileId, splitPct)}
                       onUpdateSplit={updateClientOwnerSplitPct}
                       onRemove={removeClientOwnerSplit}
+                      onAddPending={(email, splitPct) => addPending(client.id, email, "digital_owner", { splitPct })}
+                      onRemovePending={removePending}
                     />
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -366,9 +423,16 @@ export function ClientsManager({
                             key={ch.id}
                             channel={ch}
                             owners={ownerRows.filter((o) => o.client_channel_id === ch.id)}
+                            pending={pendingRows.filter(
+                              (p) => p.client_id === client.id && p.kind === "digital_channel_owner" && p.channel === ch.channel,
+                            )}
                             people={people}
                             onAdd={(profileId) => addOwner(ch.id, profileId)}
                             onRemove={removeOwner}
+                            onAddPending={(email) =>
+                              addPending(client.id, email, "digital_channel_owner", { channel: ch.channel })
+                            }
+                            onRemovePending={removePending}
                           />
                         ))}
                     </div>
@@ -383,23 +447,97 @@ export function ClientsManager({
   );
 }
 
+// Chips of clients pre-assigned to someone by email, before they've signed
+// up — a "+ Pre-assign" control lets you stage the assignment now, and it's
+// applied automatically the moment a matching account is created.
+function PendingEmailPicker({
+  pending,
+  onAdd,
+  onRemove,
+}: {
+  pending: PendingRow[];
+  onAdd: (email: string) => void;
+  onRemove: (id: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+
+  function submit() {
+    const trimmed = email.trim();
+    if (!trimmed) return;
+    onAdd(trimmed);
+    setEmail("");
+    setOpen(false);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {pending.map((p) => (
+        <span
+          key={p.id}
+          title="Waiting for this person to create an account with this email"
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-gold/50 bg-gold/10 px-2.5 py-1 text-xs font-medium text-charcoal"
+        >
+          {p.email} <span className="text-[10px] uppercase tracking-wide text-gold">pending</span>
+          <button
+            type="button"
+            onClick={() => onRemove(p.id)}
+            className="text-charcoal hover:text-red-600"
+            aria-label={`Remove ${p.email}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {open ? (
+        <input
+          autoFocus
+          type="email"
+          placeholder="email@sunnyadvertising.com.au"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          onBlur={submit}
+          className="w-52 rounded-lg border border-border-c bg-white px-2.5 py-1 text-xs text-ink outline-none focus:border-gold"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-full border border-dashed border-border-c px-2.5 py-1 text-xs font-semibold text-charcoal hover:border-gold/50 hover:text-gold"
+        >
+          + Pre-assign by email
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Who's tagged as working this channel — no percentage. See
 // ClientRetainerSplitEditor for the client-level split that actually drives
 // the derived lead/second and Team split Retainer column.
 function ChannelOwnersEditor({
   channel,
   owners,
+  pending,
   people,
   onAdd,
   onRemove,
+  onAddPending,
+  onRemovePending,
 }: {
   channel: ChannelRow;
   owners: ChannelOwnerRow[];
+  pending: PendingRow[];
   people: PersonOption[];
   onAdd: (profileId: string) => void;
   onRemove: (ownerId: number) => void;
+  onAddPending: (email: string) => void;
+  onRemovePending: (id: number) => void;
 }) {
   const availablePeople = people.filter((p) => !owners.some((o) => o.profile_id === p.id));
+  const [pendingOpen, setPendingOpen] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg bg-bg px-3 py-2 text-xs">
@@ -408,6 +546,18 @@ function ChannelOwnersEditor({
         <span key={o.id} className="flex items-center gap-1 rounded-full border border-border-c bg-white px-2 py-1">
           {people.find((p) => p.id === o.profile_id)?.label ?? "Unknown"}
           <button type="button" onClick={() => onRemove(o.id)} className="text-red-600 hover:underline">
+            ×
+          </button>
+        </span>
+      ))}
+      {pending.map((p) => (
+        <span
+          key={p.id}
+          title="Waiting for this person to create an account with this email"
+          className="flex items-center gap-1 rounded-full border border-dashed border-gold/50 bg-gold/10 px-2 py-1 text-charcoal"
+        >
+          {p.email} <span className="text-[10px] uppercase tracking-wide text-gold">pending</span>
+          <button type="button" onClick={() => onRemovePending(p.id)} className="text-red-600 hover:underline">
             ×
           </button>
         </span>
@@ -426,6 +576,35 @@ function ChannelOwnersEditor({
           ))}
         </select>
       )}
+      {pendingOpen ? (
+        <input
+          autoFocus
+          type="email"
+          placeholder="email@sunnyadvertising.com.au"
+          value={pendingEmail}
+          onChange={(e) => setPendingEmail(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || !pendingEmail.trim()) return;
+            onAddPending(pendingEmail.trim());
+            setPendingEmail("");
+            setPendingOpen(false);
+          }}
+          onBlur={() => {
+            if (pendingEmail.trim()) onAddPending(pendingEmail.trim());
+            setPendingEmail("");
+            setPendingOpen(false);
+          }}
+          className="w-44 rounded border border-border-c px-1.5 py-1"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPendingOpen(true)}
+          className="rounded border border-dashed border-border-c px-1.5 py-1 text-charcoal hover:border-gold/50"
+        >
+          + pre-assign by email…
+        </button>
+      )}
     </div>
   );
 }
@@ -435,19 +614,27 @@ function ChannelOwnersEditor({
 // the Team split Retainer column, distinct from the per-channel tags above.
 function ClientRetainerSplitEditor({
   owners,
+  pending,
   people,
   onAdd,
   onUpdateSplit,
   onRemove,
+  onAddPending,
+  onRemovePending,
 }: {
   owners: ClientOwnerRow[];
+  pending: PendingRow[];
   people: PersonOption[];
   onAdd: (profileId: string, splitPct: number) => void;
   onUpdateSplit: (ownerId: number, splitPct: number) => void;
   onRemove: (ownerId: number) => void;
+  onAddPending: (email: string, splitPct: number) => void;
+  onRemovePending: (id: number) => void;
 }) {
   const [newPersonId, setNewPersonId] = useState("");
   const [newSplit, setNewSplit] = useState(100);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingSplit, setPendingSplit] = useState(100);
   const availablePeople = people.filter((p) => !owners.some((o) => o.profile_id === p.id));
 
   return (
@@ -469,6 +656,18 @@ function ClientRetainerSplitEditor({
           />
           %
           <button type="button" onClick={() => onRemove(o.id)} className="text-red-600 hover:underline">
+            ×
+          </button>
+        </span>
+      ))}
+      {pending.map((p) => (
+        <span
+          key={p.id}
+          title="Waiting for this person to create an account with this email"
+          className="flex items-center gap-1 rounded-full border border-dashed border-gold/50 bg-white px-2 py-1 text-charcoal"
+        >
+          {p.email} ({p.split_pct}%) <span className="text-[10px] uppercase tracking-wide text-gold">pending</span>
+          <button type="button" onClick={() => onRemovePending(p.id)} className="text-red-600 hover:underline">
             ×
           </button>
         </span>
@@ -509,6 +708,33 @@ function ClientRetainerSplitEditor({
           </button>
         </>
       )}
+      <input
+        type="email"
+        placeholder="pre-assign by email…"
+        value={pendingEmail}
+        onChange={(e) => setPendingEmail(e.target.value)}
+        className="w-40 rounded border border-dashed border-border-c px-1.5 py-1"
+      />
+      <input
+        type="number"
+        min={1}
+        max={100}
+        value={pendingSplit}
+        onChange={(e) => setPendingSplit(Number(e.target.value))}
+        className="w-12 rounded border border-border-c px-1 text-right"
+      />
+      <button
+        type="button"
+        disabled={!pendingEmail.trim()}
+        onClick={() => {
+          onAddPending(pendingEmail.trim(), pendingSplit);
+          setPendingEmail("");
+          setPendingSplit(100);
+        }}
+        className="rounded border border-dashed border-border-c px-2 py-1 font-semibold text-charcoal hover:border-gold/50 disabled:opacity-40"
+      >
+        Add
+      </button>
     </div>
   );
 }
