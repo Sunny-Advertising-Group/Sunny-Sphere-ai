@@ -94,7 +94,7 @@ export default async function AdminPage({
       .neq("status", "shipped")
       .neq("status", "parked")
       .order("created_at", { ascending: false }),
-    supabase.from("profiles").select("id, email, full_name, team, role").order("email"),
+    supabase.from("profiles").select("id, email, full_name, team, role, last_seen_at").order("email"),
     supabase.from("section_access").select("user_id, section"),
     supabase.from("resources").select("*").eq("section", "policy").order("sort_order"),
     supabase.from("resources").select("*").eq("section", "key_resource").order("sort_order"),
@@ -153,6 +153,7 @@ export default async function AdminPage({
     role: p.role,
     grantedSections: grantsByUser.get(p.id) ?? [],
     lastSignInAt: lastSignInById.get(p.id) ?? null,
+    lastSeenAt: p.last_seen_at,
   }));
 
   const personOptions: PersonOption[] = (profiles ?? []).map((p) => ({

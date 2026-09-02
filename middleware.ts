@@ -1,9 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, type NextFetchEvent } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/invite"];
 
-export async function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest, event: NextFetchEvent) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -28,6 +28,12 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // Records real site activity (see touch_last_seen()'s own throttling) —
+  // separate from auth.users.last_sign_in_at, which only updates on a fresh
+  // login and can go stale for weeks under a persistent session. Backgrounded
+  // via waitUntil so it never delays the response.
+  if (user) event.waitUntil(Promise.resolve(supabase.rpc("touch_last_seen")));
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
