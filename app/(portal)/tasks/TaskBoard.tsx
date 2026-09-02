@@ -626,6 +626,7 @@ function CardView({
               {isOwnBoard && (
                 <TaskComposer
                   categoryId={category.id}
+                  pending={category.id < 0}
                   people={people}
                   clients={clients}
                   myProfileId={myProfileId}
@@ -719,7 +720,14 @@ function ListView({
             </div>
             {isOwnBoard && (
               <div className="p-2">
-                <TaskComposer categoryId={category.id} people={people} clients={clients} myProfileId={myProfileId} onAdd={onAddTask} />
+                <TaskComposer
+                  categoryId={category.id}
+                  pending={category.id < 0}
+                  people={people}
+                  clients={clients}
+                  myProfileId={myProfileId}
+                  onAdd={onAddTask}
+                />
               </div>
             )}
           </Card>
@@ -921,12 +929,14 @@ function AddCategoryInline({
 
 function TaskComposer({
   categoryId,
+  pending = false,
   people,
   clients,
   myProfileId,
   onAdd,
 }: {
   categoryId: number;
+  pending?: boolean;
   people: PersonLite[];
   clients: ClientLite[];
   myProfileId: string;
@@ -962,6 +972,18 @@ function TaskComposer({
       clientId: clientId ? Number(clientId) : null,
     });
     reset();
+  }
+
+  // A brand-new column is shown optimistically with a temporary negative id
+  // before the server assigns its real one — adding a task against that temp
+  // id would insert a task with a category_id nothing owns, which the tasks
+  // table's RLS policy rejects. Block that window instead of letting it fail.
+  if (pending) {
+    return (
+      <div className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-xs font-semibold text-charcoal/50">
+        <Plus className="h-3.5 w-3.5" strokeWidth={2} /> Saving column…
+      </div>
+    );
   }
 
   if (!open) {
