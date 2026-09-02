@@ -19,7 +19,13 @@ export type Person = {
   team: string | null;
   role: "team" | "admin";
   grantedSections: string[];
+  // Whether they've ever completed a login at all (auth.users.last_sign_in_at
+  // — set once, on first sign-in) vs. when they were actually last on the
+  // site (profiles.last_seen_at, touched on every authenticated page load —
+  // see touch_last_seen()). The former only tells you "not logged in yet";
+  // a long-lived session means it otherwise goes stale for weeks.
   lastSignInAt: string | null;
+  lastSeenAt: string | null;
 };
 
 export function PeopleTable({ people, currentUserId }: { people: Person[]; currentUserId: string }) {
@@ -182,7 +188,8 @@ export function PeopleTable({ people, currentUserId }: { people: Person[]; curre
                 <td className="px-4 py-3">
                   {p.lastSignInAt ? (
                     <span className="text-xs text-charcoal">
-                      Signed in {new Date(p.lastSignInAt).toISOString().slice(0, 10)}
+                      Last on site{" "}
+                      {new Date(p.lastSeenAt ?? p.lastSignInAt).toISOString().slice(0, 10)}
                     </span>
                   ) : (
                     <div className="space-y-1">
