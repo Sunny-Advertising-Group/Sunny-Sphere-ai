@@ -22,18 +22,34 @@ export default async function TasksPage({
   // board, any board they've been granted (task_board_access), or every
   // board if they're admin — so its distinct owner_ids double as "which
   // boards can I view", no separate query needed.
-  const [{ data: profiles }, { data: categories }, { data: myGrants }, { data: clients }] = await Promise.all([
+  const [
+    { data: profiles },
+    { data: categories },
+    { data: myGrants },
+    { data: clients },
+    { data: myAtlClients },
+    { data: myDigitalClients },
+  ] = await Promise.all([
     supabase.from("profiles").select("id, full_name, email").order("full_name"),
     supabase
       .from("task_categories")
       .select("id, owner_id, title, color, position, is_system, created_at")
       .order("position"),
     supabase.from("task_board_access").select("viewer_id").eq("owner_id", profile.id),
-    // Clients an admin/ATL/Digital-permissioned user can see — used to tag a
-    // task with a client and colour it. Empty for anyone without that
-    // section access; the client field just won't offer any options.
+    // Clients tagging is scoped to just this person's own clients — the ATL/
+    // Digital clients they're assigned to — not every active client agency-
+    // wide. Empty for anyone with no client assignments; the field just
+    // won't offer any options.
     supabase.from("clients").select("id, name, colour").eq("is_active", true).order("name"),
+    supabase.from("atl_client_assignees").select("client_id").eq("profile_id", profile.id),
+    supabase.from("digital_client_assignees").select("client_id").eq("profile_id", profile.id),
   ]);
+
+  const myClientIds = new Set([
+    ...(myAtlClients ?? []).map((r) => r.client_id),
+    ...(myDigitalClients ?? []).map((r) => r.client_id),
+  ]);
+  const myClients = (clients ?? []).filter((c) => myClientIds.has(c.id));
 
   const people: PersonLite[] = (profiles ?? []).map((p) => ({
     id: p.id,
@@ -86,11 +102,16 @@ export default async function TasksPage({
         title="Task Management"
         description="Your board is private by default — share it with whoever should see it, and tag a teammate to drop a task straight onto their Tagged Tasks line."
       />
+      {/* Keyed on boardOwnerId so switching boards remounts TaskBoard instead
+          of reusing its internal state — otherwise categories/tasks stay
+          stale after a board switch, which could send a task add against a
+          column that isn't actually the one now on screen. */}
       <TaskBoard
+        key={boardOwnerId}
         allPeople={people}
         viewablePeople={viewablePeople}
         grantedPeople={grantedPeople}
-        clients={(clients ?? []) as ClientLite[]}
+        clients={myClients as ClientLite[]}
         myProfileId={profile.id}
         boardOwnerId={boardOwnerId}
         categories={boardCategories}
