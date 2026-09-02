@@ -22,6 +22,7 @@ import {
   removeClientOwner,
   removeDigitalClientAssignee,
   setClientChannelActive,
+  setClientDigitalStatus,
   updateClientOwnerSplit,
 } from "../digital-opti/actions";
 import { Button, Card, EmptyState, Input, Select } from "@/components/ui";
@@ -43,6 +44,14 @@ const DIGITAL_STATUSES = [
   { value: "set_up", label: "Set up" },
   { value: "archived", label: "Archived" },
 ];
+// Only non-"active" digital statuses get a card badge — "Active" is the
+// unremarkable default and would just be noise next to the plain Digital
+// pill every other client already has.
+const DIGITAL_STATUS_BADGE_CLASSNAMES: Record<string, string> = {
+  paused: "bg-amber-100 text-amber-800",
+  set_up: "bg-blue-100 text-blue-800",
+  archived: "bg-black/10 text-charcoal",
+};
 const MAX_ATL_ASSIGNEES = 4;
 
 // The single shared client roster — a client can be on ATL, Digital, both, or
@@ -285,6 +294,14 @@ export function ClientsManager({
     }
   }
 
+  function toggleDigitalPaused(clientId: number, currentStatus: string | null) {
+    const nextStatus = currentStatus === "paused" ? "active" : "paused";
+    setClientRows((prev) => prev.map((c) => (c.id === clientId ? { ...c, digital_status: nextStatus } : c)));
+    startTransition(async () => {
+      await setClientDigitalStatus(clientId, nextStatus);
+    });
+  }
+
   return (
     <div className="space-y-6">
       <AddClientForm tiers={tiers} onAdded={(c) => setClientRows((prev) => [...prev, c])} />
@@ -357,6 +374,15 @@ export function ClientsManager({
                       Digital
                     </span>
                   )}
+                  {client.on_digital && client.digital_status && client.digital_status !== "active" && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        DIGITAL_STATUS_BADGE_CLASSNAMES[client.digital_status] ?? "bg-black/10 text-charcoal"
+                      }`}
+                    >
+                      {DIGITAL_STATUSES.find((s) => s.value === client.digital_status)?.label ?? client.digital_status}
+                    </span>
+                  )}
                   {client.digital_tier_id && (
                     <span
                       className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
@@ -421,6 +447,17 @@ export function ClientsManager({
                       {client.retainer != null && ` · $${client.retainer.toLocaleString()}`}
                       {` · ${cadenceLabel(client.digital_cadence ?? "weekly")}`}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleDigitalPaused(client.id, client.digital_status)}
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                        client.digital_status === "paused"
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:border-emerald-400"
+                          : "border-amber-300 bg-amber-50 text-amber-700 hover:border-amber-400"
+                      }`}
+                    >
+                      {client.digital_status === "paused" ? "Resume" : "Pause"}
+                    </button>
                   </div>
                   <div className="mb-3 flex items-center gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-charcoal">

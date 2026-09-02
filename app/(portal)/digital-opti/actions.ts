@@ -186,6 +186,19 @@ export async function updateClientWipUrl(clientId: number, url: string | null) {
   return { success: true };
 }
 
+// One-click pause/resume from the Admin Clients card, without having to open
+// Edit and resubmit the whole client form — same underlying field
+// (digital_status) the edit form's dropdown writes to.
+export async function setClientDigitalStatus(clientId: number, status: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("clients").update({ digital_status: status }).eq("id", clientId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
 // --- Admin: per-channel owners (who's tagged as working this channel — no
 // percentage; see the digital_client_owners actions below for the retainer
 // split that actually drives the client's derived lead/second) ---
