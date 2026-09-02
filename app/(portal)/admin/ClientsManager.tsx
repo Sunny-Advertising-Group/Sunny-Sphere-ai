@@ -925,23 +925,28 @@ function ClientFieldset({
       <input type="hidden" name="retainer" value={values.retainer ?? ""} />
       <input type="hidden" name="digital_status" value={values.digital_status ?? "active"} />
       <input type="hidden" name="digital_cadence" value={values.digital_cadence ?? "weekly"} />
-      <input type="hidden" name="digital_tier_id" value={values.digital_tier_id ?? ""} />
       <input type="hidden" name="account_lead_id" value={values.account_lead_id ?? ""} />
+
+      {/* Tier applies to a client overall (ATL or Digital) — the weekly
+          Digital Opti rotation it also drives is separately gated on
+          on_digital, so assigning a tier to an ATL-only client is inert
+          there, just a label/filter here in Admin. */}
+      <input type="hidden" name="digital_tier_id" value={values.digital_tier_id ?? ""} />
+      <Select
+        defaultValue={values.digital_tier_id ?? ""}
+        className="w-32"
+        onChange={(e) => onChange((v) => ({ ...v, digital_tier_id: e.target.value ? Number(e.target.value) : null }))}
+      >
+        <option value="">Tier: none</option>
+        {tiers.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </Select>
 
       {values.on_digital && (
         <>
-          <Select
-            defaultValue={values.digital_tier_id ?? ""}
-            className="w-32"
-            onChange={(e) => onChange((v) => ({ ...v, digital_tier_id: e.target.value ? Number(e.target.value) : null }))}
-          >
-            <option value="">Tier: none</option>
-            {tiers.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </Select>
           <div className="flex flex-col gap-0.5">
             {originalRetainer !== undefined && (
               <span className="text-[10px] font-semibold uppercase tracking-wide text-charcoal">
