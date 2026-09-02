@@ -90,6 +90,35 @@ export async function removeClientAssignee(clientId: number, profileId: string) 
   return { success: true };
 }
 
+// Pre-assigns a client to someone who hasn't signed up yet, by email. When a
+// profile is later created with a matching email (handle_new_user()), it's
+// applied straight into atl_client_assignees/digital_client_assignees and
+// this row is cleared — see the pending_client_assignments migration.
+export async function addPendingAssignee(clientId: number, email: string, section: "atl" | "digital") {
+  const supabase = await createClient();
+  const trimmed = email.trim().toLowerCase();
+  if (!trimmed) return { error: "Give an email address." };
+
+  const { data, error } = await supabase
+    .from("pending_client_assignments")
+    .insert({ client_id: clientId, email: trimmed, section })
+    .select("id, email, client_id, section")
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  return { success: true, pending: data };
+}
+
+export async function removePendingAssignee(id: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("pending_client_assignments").delete().eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
 export async function deleteClient(id: number) {
   const supabase = await createClient();
   const { error } = await supabase.from("clients").delete().eq("id", id);

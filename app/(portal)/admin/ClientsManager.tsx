@@ -5,9 +5,11 @@ import {
   addAtlLink,
   addClient,
   addClientAssignee,
+  addPendingAssignee,
   deleteAtlLink,
   deleteClient,
   removeClientAssignee,
+  removePendingAssignee,
   updateAtlLink,
   updateClient,
 } from "../atl/actions";
@@ -80,12 +82,19 @@ export type ChannelOwnerRow = { id: number; client_channel_id: number; profile_i
 
 export type ClientOwnerRow = { id: number; client_id: number; profile_id: string; split_pct: number };
 
+// A client pre-assigned to someone by email before they have an account —
+// applied into atl_client_assignees/digital_client_assignees automatically
+// the moment a profile with a matching email is created (see
+// handle_new_user() and the pending_client_assignments migration).
+export type PendingRow = { id: number; email: string; client_id: number; section: "atl" | "digital" };
+
 export function ClientsManager({
   clients,
   links,
   channels,
   atlAssigneesByClient,
   digitalAssigneesByClient,
+  pendingAssignments,
   channelOwners,
   clientOwners,
   people,
@@ -96,6 +105,7 @@ export function ClientsManager({
   channels: ChannelRow[];
   atlAssigneesByClient: Record<number, string[]>;
   digitalAssigneesByClient: Record<number, string[]>;
+  pendingAssignments: PendingRow[];
   channelOwners: ChannelOwnerRow[];
   clientOwners: ClientOwnerRow[];
   people: PersonOption[];
@@ -108,6 +118,7 @@ export function ClientsManager({
   const [clientOwnerRows, setClientOwnerRows] = useState(clientOwners);
   const [atlAssignments, setAtlAssignments] = useState(atlAssigneesByClient);
   const [digitalAssignments, setDigitalAssignments] = useState(digitalAssigneesByClient);
+  const [pendingRows, setPendingRows] = useState(pendingAssignments);
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
   const [, startTransition] = useTransition();
 
@@ -153,6 +164,24 @@ export function ClientsManager({
     }));
     startTransition(async () => {
       await removeDigitalClientAssignee(clientId, profileId);
+    });
+  }
+
+  function addPending(clientId: number, email: string, section: "atl" | "digital") {
+    const tempId = nextTempId();
+    setPendingRows((prev) => [...prev, { id: tempId, email, client_id: clientId, section }]);
+    startTransition(async () => {
+      const result = await addPendingAssignee(clientId, email, section);
+      const created = (result as { pending?: PendingRow } | undefined)?.pending;
+      if (created) setPendingRows((prev) => prev.map((p) => (p.id === tempId ? created : p)));
+      else setPendingRows((prev) => prev.filter((p) => p.id !== tempId));
+    });
+  }
+
+  function removePending(id: number) {
+    setPendingRows((prev) => prev.filter((p) => p.id !== id));
+    startTransition(async () => {
+      await removePendingAssignee(id);
     });
   }
 
@@ -291,6 +320,11 @@ export function ClientsManager({
                       onAdd={(profileId) => assignAtl(client.id, profileId)}
                       onRemove={(profileId) => unassignAtl(client.id, profileId)}
                     />
+                    <PendingEmailPicker
+                      pending={pendingRows.filter((p) => p.client_id === client.id && p.section === "atl")}
+                      onAdd={(email) => addPending(client.id, email, "atl")}
+                      onRemove={removePending}
+                    />
                   </div>
                   <div className="space-y-2">
                     {linkRows
@@ -323,6 +357,11 @@ export function ClientsManager({
                       options={people}
                       onAdd={(profileId) => assignDigital(client.id, profileId)}
                       onRemove={(profileId) => unassignDigital(client.id, profileId)}
+                    />
+                    <PendingEmailPicker
+                      pending={pendingRows.filter((p) => p.client_id === client.id && p.section === "digital")}
+                      onAdd={(email) => addPending(client.id, email, "digital")}
+                      onRemove={removePending}
                     />
                   </div>
                   <div className="mb-3">
@@ -378,6 +417,72 @@ export function ClientsManager({
             </Card>
           ),
         )
+      )}
+    </div>
+  );
+}
+
+// Chips of clients pre-assigned to someone by email, before they've signed
+// up — a "+ Pre-assign" control lets you stage the assignment now, and it's
+// applied automatically the moment a matching account is created.
+function PendingEmailPicker({
+  pending,
+  onAdd,
+  onRemove,
+}: {
+  pending: PendingRow[];
+  onAdd: (email: string) => void;
+  onRemove: (id: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+
+  function submit() {
+    const trimmed = email.trim();
+    if (!trimmed) return;
+    onAdd(trimmed);
+    setEmail("");
+    setOpen(false);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {pending.map((p) => (
+        <span
+          key={p.id}
+          title="Waiting for this person to create an account with this email"
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-gold/50 bg-gold/10 px-2.5 py-1 text-xs font-medium text-charcoal"
+        >
+          {p.email} <span className="text-[10px] uppercase tracking-wide text-gold">pending</span>
+          <button
+            type="button"
+            onClick={() => onRemove(p.id)}
+            className="text-charcoal hover:text-red-600"
+            aria-label={`Remove ${p.email}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {open ? (
+        <input
+          autoFocus
+          type="email"
+          placeholder="email@sunnyadvertising.com.au"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          onBlur={submit}
+          className="w-52 rounded-lg border border-border-c bg-white px-2.5 py-1 text-xs text-ink outline-none focus:border-gold"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-full border border-dashed border-border-c px-2.5 py-1 text-xs font-semibold text-charcoal hover:border-gold/50 hover:text-gold"
+        >
+          + Pre-assign by email
+        </button>
       )}
     </div>
   );
