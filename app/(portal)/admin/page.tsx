@@ -1,7 +1,6 @@
 import {
   Bell,
   BookOpen,
-  Building2,
   CheckCircle2,
   ClipboardList,
   FileText,
@@ -22,6 +21,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PageHeader } from "@/components/ui";
 import { SectionCardGrid, type SectionCardDef } from "@/components/SectionCardGrid";
+import { AdminTabs } from "./AdminTabs";
 import type { PersonOption } from "@/components/AssigneePicker";
 import { AddResourceForm } from "@/components/AddResourceForm";
 import { InviteForm } from "./InviteForm";
@@ -350,25 +350,6 @@ export default async function AdminPage({
       ),
     },
     {
-      id: "clients",
-      title: "Clients — ATL & Digital",
-      icon: <Building2 className="h-5 w-5" strokeWidth={2} aria-hidden />,
-      content: (
-        <ClientsManager
-          clients={clients ?? []}
-          links={atlLinks ?? []}
-          channels={digitalChannels ?? []}
-          atlAssigneesByClient={atlAssigneesByClient}
-          digitalAssigneesByClient={digitalAssigneesByClient}
-          pendingAssignments={pendingAssignments ?? []}
-          channelOwners={channelOwners ?? []}
-          clientOwners={clientOwners ?? []}
-          people={personOptions}
-          tiers={tiers ?? []}
-        />
-      ),
-    },
-    {
       id: "digital-opti-log",
       title: "Digital — optimisation log",
       icon: <ClipboardList className="h-5 w-5" strokeWidth={2} aria-hidden />,
@@ -390,9 +371,24 @@ export default async function AdminPage({
   return (
     <div>
       <PageHeader title="Admin" description="Everything content-related lives here — invites, review queues, and full add/edit/delete for every section." />
-      <div className="p-8">
-        <SectionCardGrid sections={sections} initialSectionId={section ?? null} />
-      </div>
+      <AdminTabs
+        initialTab={section === "clients" ? "clients" : "sections"}
+        sectionsContent={<SectionCardGrid sections={sections} initialSectionId={section && section !== "clients" ? section : null} />}
+        clientsContent={
+          <ClientsManager
+            clients={clients ?? []}
+            links={atlLinks ?? []}
+            channels={digitalChannels ?? []}
+            atlAssigneesByClient={atlAssigneesByClient}
+            digitalAssigneesByClient={digitalAssigneesByClient}
+            pendingAssignments={pendingAssignments ?? []}
+            channelOwners={channelOwners ?? []}
+            clientOwners={clientOwners ?? []}
+            people={personOptions}
+            tiers={tiers ?? []}
+          />
+        }
+      />
     </div>
   );
 }
