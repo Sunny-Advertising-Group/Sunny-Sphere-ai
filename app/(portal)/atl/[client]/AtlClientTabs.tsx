@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Link2, Radio } from "lucide-react";
+import { Link2, Music2, Radio } from "lucide-react";
 import { Card, EmptyState, Pill } from "@/components/ui";
 import { cadenceLabel, HOUSEKEEPING_STATUS_META, housekeepingStatus, kindLabel, liveMaterialStatusClassName } from "@/lib/atl";
+import type { AudioItemRow } from "@/lib/audio";
+import { AudioTracker } from "./AudioTracker";
 
 export type AtlLinkRow = {
   id: number;
@@ -33,6 +35,7 @@ export type LiveMaterialRow = {
 const TABS = [
   { key: "links", label: "Links", icon: Link2 },
   { key: "live_material", label: "Live material", icon: Radio },
+  { key: "audio", label: "Audio production", icon: Music2 },
 ] as const;
 
 function ageDays(iso: string) {
@@ -49,9 +52,15 @@ function relativeDays(iso: string) {
 export function AtlClientTabs({
   links,
   liveMaterial,
+  audioItems,
+  clientId,
+  isAdmin,
 }: {
   links: AtlLinkRow[];
   liveMaterial: LiveMaterialRow[];
+  audioItems: AudioItemRow[];
+  clientId: number;
+  isAdmin: boolean;
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("links");
 
@@ -284,6 +293,8 @@ export function AtlClientTabs({
           )}
         </div>
       )}
+
+      {tab === "audio" && <AudioTracker clientId={clientId} items={audioItems} isAdmin={isAdmin} />}
     </div>
   );
 }

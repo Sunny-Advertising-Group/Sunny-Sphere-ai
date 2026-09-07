@@ -23,7 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tools", label: "Tools", icon: Wrench },
   { href: "/could-this-be-aid", label: "Could this be AI'd?", icon: Lightbulb },
-  { href: "/tasks", label: "Task Management", icon: ListChecks },
+  { href: "/tasks", label: "Task Management", icon: ListChecks, adminOnly: true },
   { href: "/atl", label: "ATL", icon: BarChart3, section: "atl" },
   { href: "/digital-opti", label: "Digital", icon: Target, section: "digital_opti" },
   { href: "/agency", label: "Agency", icon: Building2 },
