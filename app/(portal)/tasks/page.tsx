@@ -13,6 +13,7 @@ export default async function TasksPage({
 }) {
   const visibility = await getVisibility();
   if (!visibility) redirect("/login");
+  if (!visibility.isAdmin) redirect("/");
 
   const supabase = await createClient();
   const { profile } = visibility;

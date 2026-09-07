@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { periodStart } from "@/lib/digitalOpti";
+import { AUDIO_STAGES } from "@/lib/audio";
 
 // `clients` is the single shared roster for both ATL and Digital — a client
 // can be on either, both, or neither (on_atl/on_digital), with shared fields
@@ -234,6 +235,92 @@ export async function logAtlChecklist(atlLinkId: number) {
     atl_link_id: atlLinkId,
     completed_by: user.id,
   });
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  return { success: true };
+}
+
+// --- Audio production tracker (Lincoln Place and any other ATL client that
+// runs radio/audio spots split by estate) ---
+
+const AUDIO_SELECT =
+  "id, client_id, estate, title, tag, messaging, placement, station, voice, duration, script_url, audio_url, live_date, end_date, status, sort_order";
+
+const AUDIO_STATUS_KEYS = new Set<string>(AUDIO_STAGES.map((s) => s.key));
+
+function audioFieldsFromForm(formData: FormData) {
+  const status = String(formData.get("status") ?? "briefed").trim();
+  return {
+    estate: String(formData.get("estate") ?? "").trim(),
+    title: String(formData.get("title") ?? "").trim(),
+    tag: String(formData.get("tag") ?? "").trim() || null,
+    messaging: String(formData.get("messaging") ?? "").trim() || null,
+    placement: String(formData.get("placement") ?? "").trim() || null,
+    station: String(formData.get("station") ?? "").trim() || null,
+    voice: String(formData.get("voice") ?? "").trim() || null,
+    duration: String(formData.get("duration") ?? "").trim() || null,
+    script_url: String(formData.get("script_url") ?? "").trim() || null,
+    audio_url: String(formData.get("audio_url") ?? "").trim() || null,
+    live_date: String(formData.get("live_date") ?? "").trim() || null,
+    end_date: String(formData.get("end_date") ?? "").trim() || null,
+    status: AUDIO_STATUS_KEYS.has(status) ? status : "briefed",
+  };
+}
+
+export async function addAudioItem(_prevState: unknown, formData: FormData) {
+  const supabase = await createClient();
+  const clientId = Number(formData.get("client_id"));
+  const fields = audioFieldsFromForm(formData);
+  if (!clientId || !fields.estate || !fields.title) {
+    return { error: "Estate and audio title are required." };
+  }
+
+  const { data, error } = await supabase
+    .from("atl_audio_items")
+    .insert({ client_id: clientId, ...fields })
+    .select(AUDIO_SELECT)
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  return { success: true, item: data };
+}
+
+export async function updateAudioItem(_prevState: unknown, formData: FormData) {
+  const supabase = await createClient();
+  const id = Number(formData.get("id"));
+  const fields = audioFieldsFromForm(formData);
+  if (!id || !fields.estate || !fields.title) {
+    return { error: "Estate and audio title are required." };
+  }
+
+  const { data, error } = await supabase
+    .from("atl_audio_items")
+    .update(fields)
+    .eq("id", id)
+    .select(AUDIO_SELECT)
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  return { success: true, item: data };
+}
+
+export async function updateAudioItemStatus(id: number, status: string) {
+  if (!AUDIO_STATUS_KEYS.has(status)) return { error: "Unknown status." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("atl_audio_items").update({ status }).eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  return { success: true };
+}
+
+export async function deleteAudioItem(id: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("atl_audio_items").delete().eq("id", id);
   if (error) return { error: error.message };
 
   revalidatePath("/atl");

@@ -21,7 +21,7 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
 
   if (!client) notFound();
 
-  const [{ data: links }, { data: liveMaterial }] = await Promise.all([
+  const [{ data: links }, { data: liveMaterial }, { data: audioItems }] = await Promise.all([
     supabase
       .from("atl_links")
       .select("id, kind, title, url, version_label, cadence, drive_modified_at, drive_modified_by")
@@ -32,6 +32,13 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
       .select("id, partner, channel, asset_name, asset_link, messaging, status, start_date, due_date, synced_at, source_kind")
       .eq("client_id", client.id)
       .order("due_date"),
+    supabase
+      .from("atl_audio_items")
+      .select(
+        "id, client_id, estate, title, tag, messaging, placement, station, voice, duration, script_url, audio_url, live_date, end_date, status, sort_order",
+      )
+      .eq("client_id", client.id)
+      .order("sort_order"),
   ]);
 
   return (
@@ -44,7 +51,13 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
       />
 
       <div className="p-8">
-        <AtlClientTabs links={links ?? []} liveMaterial={liveMaterial ?? []} />
+        <AtlClientTabs
+          links={links ?? []}
+          liveMaterial={liveMaterial ?? []}
+          audioItems={audioItems ?? []}
+          clientId={client.id}
+          isAdmin={visibility.isAdmin}
+        />
       </div>
     </div>
   );
