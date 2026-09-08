@@ -287,7 +287,7 @@ function StatusSelect({
     <select
       value={status}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-full border-0 py-1 pl-2 pr-6 text-[11px] font-semibold uppercase tracking-wide outline-none"
+      className="w-full max-w-full truncate rounded-full border-0 py-1 pl-2 pr-6 text-[11px] font-semibold uppercase tracking-wide outline-none"
       style={{ background: `${meta.color}22`, color: meta.color === "#FDB600" ? "#8a6300" : meta.color }}
     >
       {AUDIO_STATUS_OPTIONS.map((o) => (
