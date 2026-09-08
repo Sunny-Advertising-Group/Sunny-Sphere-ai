@@ -401,7 +401,10 @@ function TrackerCards({
                   {item.key_number && <div className="mb-1 font-mono text-[10px] text-charcoal/70">{item.key_number}</div>}
                   {item.messaging && <div className="mb-1.5 text-[11.5px] leading-snug text-charcoal">{item.messaging}</div>}
                   <div className="flex items-center justify-between text-[11px] text-charcoal">
-                    <span>{item.station ?? "—"}</span>
+                    <span>
+                      {item.station ?? "—"}
+                      {item.duration ? ` · ${item.duration}` : ""}
+                    </span>
                     <span>
                       {item.live_date ? formatAudioDate(item.live_date) : "TBC"}
                       {" → "}
