@@ -2,18 +2,23 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { BarChart3, Check, ChevronDown, ChevronRight } from "lucide-react";
-import { Card, EmptyState } from "@/components/ui";
+import { BarChart3, Check, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Button, Card, EmptyState, Textarea } from "@/components/ui";
 import {
   buildAtlChecklistData,
+  buildServiceLevelData,
   cadenceLabel,
   categoryKind,
   groupChecklistByClient,
+  groupServiceLevelByClient,
   kindLabel,
   KIND_ORDER,
+  SERVICE_LEVEL_KINDS,
   type ChecklistLogInput,
+  type ServiceLevelItem,
+  type ServiceLevelLogInput,
 } from "@/lib/atl";
-import { logAtlChecklist, unlogAtlChecklist } from "./actions";
+import { logAtlChecklist, logAtlServiceLevel, unlogAtlChecklist, unlogAtlServiceLevel } from "./actions";
 import { LoaLinks, type LoaLink } from "./LoaLinks";
 
 const TEAM_ORDER = ["ATL", "Digital", "Comms"];
@@ -42,18 +47,22 @@ export function AtlHub({
   clients,
   links,
   checklistLogs,
+  serviceLevelLogs,
   loaLinks,
   isAdmin,
 }: {
   clients: ClientRow[];
   links: LinkRow[];
   checklistLogs: ChecklistLogInput[];
+  serviceLevelLogs: ServiceLevelLogInput[];
   loaLinks: LoaLink[];
   isAdmin: boolean;
 }) {
   const [view, setView] = useState<"checklist" | "client" | "category">("checklist");
   const [openKinds, setOpenKinds] = useState<Set<string>>(new Set());
   const [logs, setLogs] = useState(checklistLogs);
+  const [slLogs, setSlLogs] = useState(serviceLevelLogs);
+  const [noteModalItem, setNoteModalItem] = useState<ServiceLevelItem | null>(null);
   const [, startTransition] = useTransition();
 
   function toggleKind(kind: string) {
@@ -106,6 +115,39 @@ export function AtlHub({
     });
   }
 
+  const serviceLevel = useMemo(
+    () =>
+      buildServiceLevelData(
+        clients.map((c) => ({ id: c.id, name: c.name, colour: c.colour })),
+        slLogs,
+      ),
+    [clients, slLogs],
+  );
+
+  function logServiceLevel(clientId: number, kind: string, note: string) {
+    const optimisticStamp = new Date().toISOString();
+    setSlLogs((prev) => [...prev, { client_id: clientId, kind, completed_at: optimisticStamp, voided_at: null, note: note || null }]);
+    startTransition(async () => {
+      const result = await logAtlServiceLevel(clientId, kind, note);
+      if ((result as { error?: string })?.error) {
+        setSlLogs((prev) => prev.filter((l) => !(l.client_id === clientId && l.kind === kind && l.completed_at === optimisticStamp)));
+      }
+    });
+  }
+
+  function untickServiceLevel(clientId: number, kind: string) {
+    const voidedAt = new Date().toISOString();
+    let reverted: ServiceLevelLogInput[] = slLogs;
+    setSlLogs((prev) => {
+      reverted = prev;
+      return prev.map((l) => (l.client_id === clientId && l.kind === kind && !l.voided_at ? { ...l, voided_at: voidedAt } : l));
+    });
+    startTransition(async () => {
+      const result = await unlogAtlServiceLevel(clientId, kind);
+      if ((result as { error?: string })?.error) setSlLogs(reverted);
+    });
+  }
+
   const byTeam = useMemo(
     () =>
       TEAM_ORDER.map((team) => ({ team, clients: clients.filter((c) => c.team === team) })).filter(
@@ -154,9 +196,23 @@ export function AtlHub({
 
       <div className="space-y-10 p-8">
         {view === "checklist" ? (
-          <div className="space-y-4">
+          <div className="space-y-8">
             <LoaLinks items={loaLinks} isAdmin={isAdmin} />
-            <ChecklistBoard cards={checklist.cards} completionPct={checklist.completionPct} totalDone={checklist.totalDone} totalActive={checklist.totalActive} onTick={tick} onUntick={untick} />
+            <div>
+              <h2 className="mb-3 text-sm font-bold text-ink">Service level</h2>
+              <ServiceLevelBoard
+                items={serviceLevel.items}
+                completionPct={serviceLevel.completionPct}
+                totalDone={serviceLevel.totalDone}
+                totalActive={serviceLevel.totalActive}
+                onTick={(item) => setNoteModalItem(item)}
+                onUntick={(item) => untickServiceLevel(item.clientId, item.kind)}
+              />
+            </div>
+            <div>
+              <h2 className="mb-3 text-sm font-bold text-ink">Links checklist</h2>
+              <ChecklistBoard cards={checklist.cards} completionPct={checklist.completionPct} totalDone={checklist.totalDone} totalActive={checklist.totalActive} onTick={tick} onUntick={untick} />
+            </div>
           </div>
         ) : view === "client" ? (
           byTeam.map((group) => (
@@ -230,6 +286,17 @@ export function AtlHub({
           })
         )}
       </div>
+
+      {noteModalItem && (
+        <ServiceLevelNoteModal
+          item={noteModalItem}
+          onSubmit={(note) => {
+            logServiceLevel(noteModalItem.clientId, noteModalItem.kind, note);
+            setNoteModalItem(null);
+          }}
+          onClose={() => setNoteModalItem(null)}
+        />
+      )}
     </div>
   );
 }
@@ -317,6 +384,133 @@ function ChecklistBoard({
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ServiceLevelBoard({
+  items,
+  completionPct,
+  totalDone,
+  totalActive,
+  onTick,
+  onUntick,
+}: {
+  items: ServiceLevelItem[];
+  completionPct: number;
+  totalDone: number;
+  totalActive: number;
+  onTick: (item: ServiceLevelItem) => void;
+  onUntick: (item: ServiceLevelItem) => void;
+}) {
+  if (items.length === 0) {
+    return <EmptyState icon={BarChart3} title="No ATL clients yet" />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">
+          Service level completion this period
+        </div>
+        <div className="mt-0.5 text-lg font-extrabold text-ink">{completionPct}%</div>
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-black/5">
+          <div className="h-full rounded-full bg-gold" style={{ width: `${completionPct}%` }} />
+        </div>
+        <div className="mt-1 text-xs text-charcoal">
+          {totalDone} of {totalActive} updated this period — client call monthly, face to face and proactive opportunity quarterly
+        </div>
+      </Card>
+
+      <div className="flex flex-col gap-1.5">
+        {groupServiceLevelByClient(items).map((group) => (
+          <div
+            key={group.clientId}
+            className={`flex flex-wrap items-center gap-2 rounded-xl border p-1.5 transition-colors ${
+              group.allDone ? "border-emerald-300 bg-emerald-50" : "border-border-c bg-white"
+            }`}
+          >
+            <div className="flex min-w-[180px] flex-none items-center gap-2 rounded-lg bg-ink px-2.5 py-1.5 text-white">
+              <span className="h-2 w-2 flex-none rounded-full" style={{ background: group.clientColour || "#FDB600" }} />
+              <div className="text-sm font-bold">{group.clientName}</div>
+            </div>
+            <div className="flex min-w-[220px] flex-1 flex-wrap items-center gap-1.5">
+              {group.items.map((item) => (
+                <button
+                  key={item.kind}
+                  type="button"
+                  onClick={() => (item.done ? onUntick(item) : onTick(item))}
+                  title={
+                    item.done
+                      ? item.lastNote
+                        ? item.lastNote
+                        : "Click to undo this period's tick"
+                      : `Mark done for this period (${cadenceLabel(item.cadence)})`
+                  }
+                  className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                    item.done
+                      ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:border-emerald-400"
+                      : "border-border-c bg-white text-ink hover:border-gold/50"
+                  }`}
+                >
+                  <span
+                    className={`flex h-3.5 w-3.5 flex-none items-center justify-center rounded border ${
+                      item.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
+                    }`}
+                  >
+                    {item.done && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                  </span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ServiceLevelNoteModal({
+  item,
+  onSubmit,
+  onClose,
+}: {
+  item: ServiceLevelItem;
+  onSubmit: (note: string) => void;
+  onClose: () => void;
+}) {
+  const [note, setNote] = useState("");
+  const placeholder = SERVICE_LEVEL_KINDS.find((k) => k.key === item.kind)?.notePlaceholder ?? "";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-5" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between">
+          <div>
+            <h2 className="text-base font-bold text-ink">{item.label}</h2>
+            <p className="text-xs text-charcoal">{item.clientName}</p>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="text-charcoal hover:text-ink">
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        <Textarea
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder={placeholder}
+          className="mb-4"
+        />
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={() => onSubmit(note)}>
+            Log it
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -17,18 +17,23 @@ export default async function AtlPage() {
 
   const supabase = await createClient();
   const now = currentInstant();
-  const [{ data: clients }, { data: rawLinks }, { data: checklistLogs }, { data: loaLinks }] = await Promise.all([
-    supabase.from("clients").select("id, name, colour, team, is_active").eq("on_atl", true).order("name"),
-    supabase
-      .from("atl_links")
-      .select("id, client_id, kind, title, url, version_label, cadence, client:clients(name, colour)")
-      .order("sort_order"),
-    supabase
-      .from("atl_checklist_logs")
-      .select("atl_link_id, completed_at, voided_at")
-      .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
-    supabase.from("resources").select("id, title, url").eq("section", "atl_loa_link").order("sort_order"),
-  ]);
+  const [{ data: clients }, { data: rawLinks }, { data: checklistLogs }, { data: serviceLevelLogs }, { data: loaLinks }] =
+    await Promise.all([
+      supabase.from("clients").select("id, name, colour, team, is_active").eq("on_atl", true).order("name"),
+      supabase
+        .from("atl_links")
+        .select("id, client_id, kind, title, url, version_label, cadence, client:clients(name, colour)")
+        .order("sort_order"),
+      supabase
+        .from("atl_checklist_logs")
+        .select("atl_link_id, completed_at, voided_at")
+        .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
+      supabase
+        .from("atl_service_level_logs")
+        .select("client_id, kind, completed_at, voided_at, note")
+        .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
+      supabase.from("resources").select("id, title, url").eq("section", "atl_loa_link").order("sort_order"),
+    ]);
 
   const onAtlNames = new Set((clients ?? []).map((c) => c.name));
   const links: LinkRow[] = (rawLinks ?? [])
@@ -65,6 +70,7 @@ export default async function AtlPage() {
         clients={clients ?? []}
         links={links}
         checklistLogs={checklistLogs ?? []}
+        serviceLevelLogs={serviceLevelLogs ?? []}
         loaLinks={loaLinks ?? []}
         isAdmin={visibility.isAdmin}
       />

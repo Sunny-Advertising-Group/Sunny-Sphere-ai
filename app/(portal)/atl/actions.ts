@@ -4,16 +4,18 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { periodStart } from "@/lib/digitalOpti";
 import { AUDIO_STAGES } from "@/lib/audio";
+import { serviceLevelCadence } from "@/lib/atl";
 
 // `clients` is the single shared roster for both ATL and Digital — a client
 // can be on either, both, or neither (on_atl/on_digital), with shared fields
 // (name, colour, WIP link) living once and each team's own fields (ATL: team/
 // is_active; Digital: retainer/status/cadence/lead) alongside them.
 const CLIENT_SELECT =
-  "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, digital_status, digital_cadence, digital_tier_id, account_lead_id";
+  "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, atl_revenue, digital_status, digital_cadence, digital_tier_id, account_lead_id";
 
 function clientFieldsFromForm(formData: FormData) {
   const retainerRaw = String(formData.get("retainer") ?? "").trim();
+  const atlRevenueRaw = String(formData.get("atl_revenue") ?? "").trim();
   const digitalStatus = String(formData.get("digital_status") ?? "").trim();
   const digitalCadence = String(formData.get("digital_cadence") ?? "").trim();
   const accountLeadId = String(formData.get("account_lead_id") ?? "").trim();
@@ -26,6 +28,7 @@ function clientFieldsFromForm(formData: FormData) {
     on_digital: formData.get("on_digital") === "true",
     wip_doc_url: String(formData.get("wip_doc_url") ?? "").trim() || null,
     retainer: retainerRaw ? Number(retainerRaw) : null,
+    atl_revenue: atlRevenueRaw ? Number(atlRevenueRaw) : null,
     digital_status: digitalStatus || null,
     digital_cadence: digitalCadence || null,
     digital_tier_id: digitalTierIdRaw ? Number(digitalTierIdRaw) : null,
@@ -91,7 +94,50 @@ export async function removeClientAssignee(clientId: number, profileId: string) 
   return { success: true };
 }
 
-export type PendingAssignmentKind = "atl_assignee" | "digital_assignee" | "digital_owner" | "digital_channel_owner";
+// --- Admin: ATL revenue split (who's credited for this client's ATL
+// revenue, and what share) — the ATL counterpart to Digital's
+// digital_client_owners / retainer split. ---
+
+export async function addAtlClientOwner(clientId: number, profileId: string, splitPct: number) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("atl_client_owners")
+    .insert({ client_id: clientId, profile_id: profileId, split_pct: splitPct })
+    .select("id, client_id, profile_id, split_pct")
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
+  return { success: true, owner: data };
+}
+
+export async function updateAtlClientOwnerSplit(ownerId: number, splitPct: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("atl_client_owners").update({ split_pct: splitPct }).eq("id", ownerId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function removeAtlClientOwner(ownerId: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("atl_client_owners").delete().eq("id", ownerId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export type PendingAssignmentKind =
+  | "atl_assignee"
+  | "digital_assignee"
+  | "digital_owner"
+  | "digital_channel_owner"
+  | "atl_owner";
 
 // Pre-assigns a client to someone who hasn't signed up yet, by email. When a
 // profile is later created with a matching email (handle_new_user()), it's
@@ -349,5 +395,95 @@ export async function unlogAtlChecklist(atlLinkId: number) {
   if (error) return { error: error.message };
 
   revalidatePath("/atl");
+  return { success: true };
+}
+
+// --- Service level: ticking one of the three fixed client obligations
+// (call/face_to_face/proactive) off for its current cadence period, with a
+// short note captured on every tick ---
+
+export async function logAtlServiceLevel(clientId: number, kind: string, note: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const cadence = serviceLevelCadence(kind);
+  const start = periodStart(cadence).toISOString();
+  const { data: existing } = await supabase
+    .from("atl_service_level_logs")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("kind", kind)
+    .is("voided_at", null)
+    .gte("completed_at", start)
+    .limit(1);
+  if (existing && existing.length > 0) return { success: true };
+
+  const { error } = await supabase.from("atl_service_level_logs").insert({
+    client_id: clientId,
+    kind,
+    completed_by: user.id,
+    note: note.trim() || null,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  return { success: true };
+}
+
+export async function unlogAtlServiceLevel(clientId: number, kind: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const cadence = serviceLevelCadence(kind);
+  const start = periodStart(cadence).toISOString();
+  const { error } = await supabase
+    .from("atl_service_level_logs")
+    .update({ voided_at: new Date().toISOString(), voided_by: user.id })
+    .eq("client_id", clientId)
+    .eq("kind", kind)
+    .is("voided_at", null)
+    .gte("completed_at", start);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  return { success: true };
+}
+
+// --- Admin: service level audit log (verify / deny a tick) ---
+
+export async function voidServiceLevelLog(logId: number) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { error } = await supabase
+    .from("atl_service_level_logs")
+    .update({ voided_at: new Date().toISOString(), voided_by: user.id })
+    .eq("id", logId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function restoreServiceLevelLog(logId: number) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("atl_service_level_logs")
+    .update({ voided_at: null, voided_by: null })
+    .eq("id", logId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
   return { success: true };
 }

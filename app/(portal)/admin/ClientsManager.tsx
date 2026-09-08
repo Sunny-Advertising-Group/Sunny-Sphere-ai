@@ -2,14 +2,17 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import {
+  addAtlClientOwner,
   addAtlLink,
   addClient,
   addClientAssignee,
   addPendingAssignee,
   deleteAtlLink,
   deleteClient,
+  removeAtlClientOwner,
   removeClientAssignee,
   removePendingAssignee,
+  updateAtlClientOwnerSplit,
   updateAtlLink,
   updateClient,
 } from "../atl/actions";
@@ -67,6 +70,7 @@ export type ClientRow = {
   on_digital: boolean;
   wip_doc_url: string | null;
   retainer: number | null;
+  atl_revenue: number | null;
   digital_status: string | null;
   digital_cadence: string | null;
   digital_tier_id: number | null;
@@ -90,6 +94,7 @@ export type ChannelRow = { id: number; client_id: number; channel: string; is_ac
 export type ChannelOwnerRow = { id: number; client_channel_id: number; profile_id: string };
 
 export type ClientOwnerRow = { id: number; client_id: number; profile_id: string; split_pct: number };
+export type AtlOwnerRow = { id: number; client_id: number; profile_id: string; split_pct: number };
 
 // A client-person assignment pre-staged for someone by email before they
 // have an account — applied automatically into the matching assignment
@@ -99,7 +104,7 @@ export type PendingRow = {
   id: number;
   email: string;
   client_id: number;
-  kind: "atl_assignee" | "digital_assignee" | "digital_owner" | "digital_channel_owner";
+  kind: "atl_assignee" | "digital_assignee" | "digital_owner" | "digital_channel_owner" | "atl_owner";
   channel: string | null;
   split_pct: number | null;
 };
@@ -113,6 +118,7 @@ export function ClientsManager({
   pendingAssignments,
   channelOwners,
   clientOwners,
+  atlClientOwners,
   people,
   tiers,
 }: {
@@ -124,6 +130,7 @@ export function ClientsManager({
   pendingAssignments: PendingRow[];
   channelOwners: ChannelOwnerRow[];
   clientOwners: ClientOwnerRow[];
+  atlClientOwners: AtlOwnerRow[];
   people: PersonOption[];
   tiers: TierOption[];
 }) {
@@ -132,6 +139,7 @@ export function ClientsManager({
   const [channelRows, setChannelRows] = useState(channels);
   const [ownerRows, setOwnerRows] = useState(channelOwners);
   const [clientOwnerRows, setClientOwnerRows] = useState(clientOwners);
+  const [atlClientOwnerRows, setAtlClientOwnerRows] = useState(atlClientOwners);
   const [atlAssignments, setAtlAssignments] = useState(atlAssigneesByClient);
   const [digitalAssignments, setDigitalAssignments] = useState(digitalAssigneesByClient);
   const [pendingRows, setPendingRows] = useState(pendingAssignments);
@@ -275,6 +283,31 @@ export function ClientsManager({
     });
   }
 
+  function addAtlClientOwnerSplit(clientId: number, profileId: string, splitPct: number) {
+    const tempId = nextTempId();
+    setAtlClientOwnerRows((prev) => [...prev, { id: tempId, client_id: clientId, profile_id: profileId, split_pct: splitPct }]);
+    startTransition(async () => {
+      const result = await addAtlClientOwner(clientId, profileId, splitPct);
+      const created = (result as { owner?: AtlOwnerRow } | undefined)?.owner;
+      if (created) setAtlClientOwnerRows((prev) => prev.map((o) => (o.id === tempId ? created : o)));
+      else setAtlClientOwnerRows((prev) => prev.filter((o) => o.id !== tempId));
+    });
+  }
+
+  function updateAtlClientOwnerSplitPct(ownerId: number, splitPct: number) {
+    setAtlClientOwnerRows((prev) => prev.map((o) => (o.id === ownerId ? { ...o, split_pct: splitPct } : o)));
+    startTransition(async () => {
+      await updateAtlClientOwnerSplit(ownerId, splitPct);
+    });
+  }
+
+  function removeAtlClientOwnerSplit(ownerId: number) {
+    setAtlClientOwnerRows((prev) => prev.filter((o) => o.id !== ownerId));
+    startTransition(async () => {
+      await removeAtlClientOwner(ownerId);
+    });
+  }
+
   function toggleChannel(clientId: number, channelValue: string) {
     const existing = channelRows.find((ch) => ch.client_id === clientId && ch.channel === channelValue);
     if (!existing) {
@@ -411,7 +444,7 @@ export function ClientsManager({
 
               {client.on_atl && (
                 <div className="mt-4 border-t border-border-c pt-4">
-                  <div className="mb-2 flex items-center gap-2">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-charcoal">ATL assigned</span>
                     <AssigneePicker
                       assigned={(atlAssignments[client.id] ?? [])
@@ -426,6 +459,22 @@ export function ClientsManager({
                       pending={pendingRows.filter((p) => p.client_id === client.id && p.kind === "atl_assignee")}
                       onAdd={(email) => addPending(client.id, email, "atl_assignee")}
                       onRemove={removePending}
+                    />
+                    {client.atl_revenue != null && (
+                      <span className="text-xs text-charcoal">${client.atl_revenue.toLocaleString()}</span>
+                    )}
+                  </div>
+                  <div className="mb-3">
+                    <RevenueSplitEditor
+                      label="ATL revenue split"
+                      owners={atlClientOwnerRows.filter((o) => o.client_id === client.id)}
+                      pending={pendingRows.filter((p) => p.client_id === client.id && p.kind === "atl_owner")}
+                      people={people}
+                      onAdd={(profileId, splitPct) => addAtlClientOwnerSplit(client.id, profileId, splitPct)}
+                      onUpdateSplit={updateAtlClientOwnerSplitPct}
+                      onRemove={removeAtlClientOwnerSplit}
+                      onAddPending={(email, splitPct) => addPending(client.id, email, "atl_owner", { splitPct })}
+                      onRemovePending={removePending}
                     />
                   </div>
                   <div className="space-y-2">
@@ -478,7 +527,8 @@ export function ClientsManager({
                     />
                   </div>
                   <div className="mb-3">
-                    <ClientRetainerSplitEditor
+                    <RevenueSplitEditor
+                      label="Retainer split"
                       owners={clientOwnerRows.filter((o) => o.client_id === client.id)}
                       pending={pendingRows.filter((p) => p.client_id === client.id && p.kind === "digital_owner")}
                       people={people}
@@ -707,10 +757,13 @@ function ChannelOwnersEditor({
   );
 }
 
-// The client-level retainer split — who's credited for this client's
-// revenue, and what share. This is what derives the board's lead/second and
-// the Team split Retainer column, distinct from the per-channel tags above.
-function ClientRetainerSplitEditor({
+// The client-level revenue split — who's credited for this client's
+// revenue, and what share. Shared by both Digital (retainer, driving the
+// board's lead/second and the Team split Retainer column) and ATL (its own
+// atl_revenue) — the two are separate dollar figures with separate owner
+// tables (digital_client_owners / atl_client_owners), but the same editor.
+function RevenueSplitEditor({
+  label,
   owners,
   pending,
   people,
@@ -720,7 +773,8 @@ function ClientRetainerSplitEditor({
   onAddPending,
   onRemovePending,
 }: {
-  owners: ClientOwnerRow[];
+  label: string;
+  owners: { id: number; profile_id: string; split_pct: number }[];
   pending: PendingRow[];
   people: PersonOption[];
   onAdd: (profileId: string, splitPct: number) => void;
@@ -737,7 +791,7 @@ function ClientRetainerSplitEditor({
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gold/30 bg-gold/5 px-3 py-2 text-xs">
-      <span className="font-semibold uppercase tracking-wide text-charcoal">Retainer split</span>
+      <span className="font-semibold uppercase tracking-wide text-charcoal">{label}</span>
       {owners.map((o) => (
         <span key={o.id} className="flex items-center gap-1 rounded-full border border-border-c bg-white px-2 py-1">
           {people.find((p) => p.id === o.profile_id)?.label ?? "Unknown"}
@@ -842,14 +896,16 @@ function ClientFieldset({
   values,
   onChange,
   originalRetainer,
+  originalAtlRevenue,
 }: {
   tiers: TierOption[];
   values: ClientRow;
   onChange: (updater: (v: ClientRow) => ClientRow) => void;
-  // The retainer as it was before this edit — shown alongside the input so
-  // an admin can see what it's changing from, not just what they're typing.
-  // Omitted (undefined) when adding a brand-new client.
+  // The retainer/ATL revenue as they were before this edit — shown alongside
+  // their inputs so an admin can see what they're changing from, not just
+  // what they're typing. Omitted (undefined) when adding a brand-new client.
   originalRetainer?: number | null;
+  originalAtlRevenue?: number | null;
 }) {
   return (
     <>
@@ -926,6 +982,8 @@ function ClientFieldset({
       <input type="hidden" name="digital_status" value={values.digital_status ?? "active"} />
       <input type="hidden" name="digital_cadence" value={values.digital_cadence ?? "weekly"} />
       <input type="hidden" name="account_lead_id" value={values.account_lead_id ?? ""} />
+      {/* Same deal for On ATL — keeps atl_revenue if the checkbox gets toggled off and back on. */}
+      <input type="hidden" name="atl_revenue" value={values.atl_revenue ?? ""} />
 
       {/* Tier applies to a client overall (ATL or Digital) — the weekly
           Digital Opti rotation it also drives is separately gated on
@@ -944,6 +1002,24 @@ function ClientFieldset({
           </option>
         ))}
       </Select>
+
+      {values.on_atl && (
+        <div className="flex flex-col gap-0.5">
+          {originalAtlRevenue !== undefined && (
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-charcoal">
+              Currently {originalAtlRevenue != null ? `$${originalAtlRevenue.toLocaleString()}` : "none"}
+            </span>
+          )}
+          <Input
+            type="number"
+            step="0.01"
+            defaultValue={values.atl_revenue ?? ""}
+            placeholder="ATL revenue $"
+            className="w-32"
+            onChange={(e) => onChange((v) => ({ ...v, atl_revenue: e.target.value ? Number(e.target.value) : null }))}
+          />
+        </div>
+      )}
 
       {values.on_digital && (
         <>
@@ -1005,6 +1081,7 @@ function AddClientForm({ tiers, onAdded }: { tiers: TierOption[]; onAdded: (c: C
     on_digital: false,
     wip_doc_url: "",
     retainer: null,
+    atl_revenue: null,
     digital_status: "active",
     digital_cadence: "weekly",
     digital_tier_id: null,
@@ -1084,6 +1161,7 @@ function EditClientForm({
           values={values}
           onChange={(updater) => setValues(updater)}
           originalRetainer={client.retainer}
+          originalAtlRevenue={client.atl_revenue}
         />
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save"}
