@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/cleanup-completed-tasks",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/expire-live-audio",
+      "schedule": "45 6 * * *"
     }
   ]
 }
