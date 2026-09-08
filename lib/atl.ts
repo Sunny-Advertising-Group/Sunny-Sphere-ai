@@ -252,3 +252,139 @@ export function groupChecklistByClient(cards: ChecklistCard[]): ChecklistClientG
   }
   return groups.sort((a, b) => a.clientName.localeCompare(b.clientName));
 }
+
+// --- Service level tab: three fixed obligations per ATL client, each on its
+// own fixed cadence (not user-configurable like the link checklist above),
+// with a short note captured on every tick — why you called, what the
+// proactive was, when the next face-to-face is booked, etc. ---
+
+export type ServiceLevelKind = "call" | "face_to_face" | "proactive";
+
+export const SERVICE_LEVEL_KINDS: {
+  key: ServiceLevelKind;
+  label: string;
+  cadence: string;
+  notePlaceholder: string;
+}[] = [
+  { key: "call", label: "Client call", cadence: "monthly", notePlaceholder: "What did you cover on the call?" },
+  {
+    key: "face_to_face",
+    label: "Face to face meeting",
+    cadence: "quarterly",
+    notePlaceholder: "How did it go, and/or when's the next one booked in?",
+  },
+  {
+    key: "proactive",
+    label: "Proactive opportunity",
+    cadence: "quarterly",
+    notePlaceholder: "What was the opportunity you presented?",
+  },
+];
+
+export function serviceLevelCadence(kind: string): string {
+  return SERVICE_LEVEL_KINDS.find((k) => k.key === kind)?.cadence ?? "monthly";
+}
+
+export type ServiceLevelClientInput = { id: number; name: string; colour: string | null };
+export type ServiceLevelLogInput = {
+  client_id: number;
+  kind: string;
+  completed_at: string;
+  voided_at: string | null;
+  note: string | null;
+};
+
+export type ServiceLevelItem = {
+  clientId: number;
+  clientName: string;
+  clientColour: string | null;
+  kind: ServiceLevelKind;
+  label: string;
+  cadence: string;
+  done: boolean;
+  lastLoggedAt: string | null;
+  lastNote: string | null;
+};
+
+export type ServiceLevelData = {
+  items: ServiceLevelItem[];
+  completionPct: number;
+  totalDone: number;
+  totalActive: number;
+};
+
+export function buildServiceLevelData(
+  clients: ServiceLevelClientInput[],
+  logs: ServiceLevelLogInput[],
+  now: Date = new Date(),
+): ServiceLevelData {
+  const logsByClientKind = new Map<string, ServiceLevelLogInput[]>();
+  for (const log of logs) {
+    const key = `${log.client_id}:${log.kind}`;
+    const arr = logsByClientKind.get(key) ?? [];
+    arr.push(log);
+    logsByClientKind.set(key, arr);
+  }
+
+  let totalDone = 0;
+  const items: ServiceLevelItem[] = [];
+  for (const client of clients) {
+    for (const skind of SERVICE_LEVEL_KINDS) {
+      const clientLogs = logsByClientKind.get(`${client.id}:${skind.key}`) ?? [];
+      const done = isLoggedForCurrentPeriod(skind.cadence, clientLogs, now);
+      if (done) totalDone += 1;
+
+      const validLogs = clientLogs.filter((l) => !l.voided_at);
+      const last = validLogs.reduce<ServiceLevelLogInput | null>(
+        (latest, log) => (!latest || log.completed_at > latest.completed_at ? log : latest),
+        null,
+      );
+
+      items.push({
+        clientId: client.id,
+        clientName: client.name,
+        clientColour: client.colour,
+        kind: skind.key,
+        label: skind.label,
+        cadence: skind.cadence,
+        done,
+        lastLoggedAt: last?.completed_at ?? null,
+        lastNote: last?.note ?? null,
+      });
+    }
+  }
+
+  return {
+    items,
+    completionPct: items.length === 0 ? 0 : Math.round((totalDone / items.length) * 100),
+    totalDone,
+    totalActive: items.length,
+  };
+}
+
+export type ServiceLevelClientGroup = {
+  clientId: number;
+  clientName: string;
+  clientColour: string | null;
+  items: ServiceLevelItem[];
+  allDone: boolean;
+};
+
+export function groupServiceLevelByClient(items: ServiceLevelItem[]): ServiceLevelClientGroup[] {
+  const map = new Map<number, ServiceLevelClientGroup>();
+  for (const item of items) {
+    const group = map.get(item.clientId) ?? {
+      clientId: item.clientId,
+      clientName: item.clientName,
+      clientColour: item.clientColour,
+      items: [],
+      allDone: true,
+    };
+    group.items.push(item);
+    map.set(item.clientId, group);
+  }
+
+  const groups = Array.from(map.values());
+  for (const group of groups) group.allDone = group.items.every((item) => item.done);
+  return groups.sort((a, b) => a.clientName.localeCompare(b.clientName));
+}

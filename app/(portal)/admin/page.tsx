@@ -33,6 +33,7 @@ import { TwoFactorSetup } from "./TwoFactorSetup";
 import { ResourceList } from "./ResourceList";
 import { ClientsManager } from "./ClientsManager";
 import { DigitalOptiLogViewer, type OptiLogRow } from "./DigitalOptiLogViewer";
+import { AtlServiceLevelLogViewer, type ServiceLevelLogRow } from "./AtlServiceLevelLogViewer";
 
 export default async function AdminPage({
   searchParams,
@@ -69,7 +70,9 @@ export default async function AdminPage({
     { data: digitalAssignees },
     { data: channelOwners },
     { data: clientOwners },
+    { data: atlClientOwners },
     { data: rawOptiLogs },
+    { data: rawServiceLevelLogs },
     { data: tiers },
     { data: toolCategories },
   ] = await Promise.all([
@@ -108,7 +111,7 @@ export default async function AdminPage({
     supabase
       .from("clients")
       .select(
-        "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, digital_status, digital_cadence, digital_tier_id, account_lead_id",
+        "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, atl_revenue, digital_status, digital_cadence, digital_tier_id, account_lead_id",
       )
       .order("name"),
     supabase.from("atl_links").select("id, client_id, kind, title, url, version_label, cadence").order("sort_order"),
@@ -118,10 +121,18 @@ export default async function AdminPage({
     supabase.from("digital_client_assignees").select("client_id, profile_id"),
     supabase.from("digital_channel_owners").select("id, client_channel_id, profile_id"),
     supabase.from("digital_client_owners").select("id, client_id, profile_id, split_pct"),
+    supabase.from("atl_client_owners").select("id, client_id, profile_id, split_pct"),
     supabase
       .from("digital_opti_logs")
       .select(
         "id, completed_at, voided_at, completed_by:profiles!digital_opti_logs_completed_by_fkey(full_name, email), voided_by:profiles!digital_opti_logs_voided_by_fkey(full_name, email), channel:digital_client_channels(channel, client:clients(name))",
+      )
+      .order("completed_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("atl_service_level_logs")
+      .select(
+        "id, kind, note, completed_at, voided_at, completed_by:profiles!atl_service_level_logs_completed_by_fkey(full_name, email), voided_by:profiles!atl_service_level_logs_voided_by_fkey(full_name, email), client:clients(name)",
       )
       .order("completed_at", { ascending: false })
       .limit(200),
@@ -187,6 +198,22 @@ export default async function AdminPage({
         voidedByName: voidedBy?.full_name || voidedBy?.email || null,
       };
     });
+
+  const serviceLevelLogs: ServiceLevelLogRow[] = (rawServiceLevelLogs ?? []).map((l) => {
+    const client = l.client as unknown as { name: string } | null;
+    const completedBy = l.completed_by as unknown as { full_name: string | null; email: string } | null;
+    const voidedBy = l.voided_by as unknown as { full_name: string | null; email: string } | null;
+    return {
+      id: l.id,
+      clientName: client?.name ?? "Unknown",
+      kind: l.kind,
+      note: l.note,
+      completedByName: completedBy?.full_name || completedBy?.email || "Unknown",
+      completedAt: l.completed_at,
+      voidedAt: l.voided_at,
+      voidedByName: voidedBy?.full_name || voidedBy?.email || null,
+    };
+  });
 
   const sections: SectionCardDef[] = [
     {
@@ -348,6 +375,12 @@ export default async function AdminPage({
       icon: <ClipboardList className="h-5 w-5" strokeWidth={2} aria-hidden />,
       content: <DigitalOptiLogViewer logs={optiLogs} />,
     },
+    {
+      id: "atl-service-level-log",
+      title: "ATL — service level log",
+      icon: <ClipboardList className="h-5 w-5" strokeWidth={2} aria-hidden />,
+      content: <AtlServiceLevelLogViewer logs={serviceLevelLogs} />,
+    },
   ];
 
   return (
@@ -371,6 +404,7 @@ export default async function AdminPage({
             pendingAssignments={pendingAssignments ?? []}
             channelOwners={channelOwners ?? []}
             clientOwners={clientOwners ?? []}
+            atlClientOwners={atlClientOwners ?? []}
             people={personOptions}
             tiers={tiers ?? []}
           />
