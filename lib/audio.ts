@@ -46,6 +46,8 @@ export type AudioItemRow = {
   live_date: string | null; // ISO date (YYYY-MM-DD), null = not yet scheduled (TBC)
   end_date: string | null; // ISO date (YYYY-MM-DD), null = ongoing/no fixed end
   status: string;
+  key_number: string | null;
+  notes: string | null;
   sort_order: number;
 };
 

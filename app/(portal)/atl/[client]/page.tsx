@@ -35,7 +35,7 @@ export default async function AtlClientPage({ params }: { params: Promise<{ clie
     supabase
       .from("atl_audio_items")
       .select(
-        "id, client_id, estate, title, tag, messaging, placement, station, voice, duration, script_url, audio_url, live_date, end_date, status, sort_order",
+        "id, client_id, estate, title, tag, messaging, placement, station, voice, duration, script_url, audio_url, live_date, end_date, status, key_number, notes, sort_order",
       )
       .eq("client_id", client.id)
       .order("sort_order"),

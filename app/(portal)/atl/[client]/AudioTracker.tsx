@@ -296,6 +296,7 @@ function TrackerView({
                       </div>
                     </div>
                     <div className="mb-1 text-[13px] font-semibold leading-tight text-ink">{item.title}</div>
+                    {item.key_number && <div className="mb-1 font-mono text-[10px] text-charcoal/70">{item.key_number}</div>}
                     {item.messaging && <div className="mb-1.5 text-[11.5px] leading-snug text-charcoal">{item.messaging}</div>}
                     <div className="flex items-center justify-between text-[11px] text-charcoal">
                       <span>{item.station ?? "—"}</span>
@@ -310,6 +311,7 @@ function TrackerView({
                         {item.placement}
                       </div>
                     )}
+                    {item.notes && <div className="mt-1.5 text-[10.5px] italic leading-snug text-charcoal/70">{item.notes}</div>}
                     <div className="mt-2">
                       <StatusSelect status={item.status} onChange={(s) => onStatusChange(item.id, s)} />
                     </div>
@@ -383,6 +385,7 @@ function LibraryView({
                   <RowActions item={item} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />
                 </div>
                 <div className="mb-1.5 text-[14.5px] font-bold text-ink">{item.title}</div>
+                {item.key_number && <div className="mb-1 font-mono text-[10px] text-charcoal/70">{item.key_number}</div>}
                 {item.messaging && <div className="mb-2.5 text-xs leading-snug text-charcoal">{item.messaging}</div>}
                 <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
                   {item.tag && (
@@ -398,6 +401,7 @@ function LibraryView({
                     {item.end_date ? formatAudioDate(item.end_date) : "Ongoing"}
                   </span>
                 </div>
+                {item.notes && <div className="mb-2.5 text-[11px] italic leading-snug text-charcoal/70">{item.notes}</div>}
                 <div className="mt-auto flex gap-2 border-t border-border-c pt-2.5">
                   {item.audio_url && (
                     <a
@@ -524,14 +528,23 @@ function AudioItemModal({
             </Field>
           </div>
 
-          <Field label="Status">
-            <Select name="status" defaultValue={item?.status ?? "briefed"}>
-              {AUDIO_STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Key number">
+              <Input name="key_number" defaultValue={item?.key_number ?? ""} placeholder="e.g. 4LIN121225D" />
+            </Field>
+            <Field label="Status">
+              <Select name="status" defaultValue={item?.status ?? "briefed"}>
+                {AUDIO_STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          <Field label="Notes">
+            <Textarea name="notes" defaultValue={item?.notes ?? ""} placeholder="Any run-date caveats, approval status, etc." />
           </Field>
 
           {state?.error && <p className="text-xs font-medium text-red-600">{state.error}</p>}
