@@ -1,25 +1,40 @@
 "use client";
 
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
-import { FileText, LayoutGrid, Library, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { FileText, LayoutGrid, Library, List, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { Button, Card, EmptyState, Input, Select, Textarea } from "@/components/ui";
-import { AUDIO_STAGES, AUDIO_STATUS_OPTIONS, audioStageMeta, formatAudioDate, type AudioItemRow } from "@/lib/audio";
+import {
+  AUDIO_STAGES,
+  AUDIO_STATUS_OPTIONS,
+  audioStageMeta,
+  ESTATE_STATE,
+  estateState,
+  formatAudioDate,
+  STATE_ORDER,
+  type AudioItemRow,
+} from "@/lib/audio";
 import { addAudioItem, deleteAudioItem, updateAudioItem, updateAudioItemStatus } from "../actions";
 
 type View = "tracker" | "library";
+type TrackerLayout = "cards" | "table";
+
+// The Not live stage never gets its own Tracker column — a spot that's
+// reached Live or Not live already lives in the Library below, so showing
+// it again here would just be duplication.
+const TRACKER_STAGES = AUDIO_STAGES.filter((s) => s.key !== "notlive");
 
 const VIEW_TABS: { key: View; label: string; icon: typeof LayoutGrid; hint: string }[] = [
   {
     key: "tracker",
     label: "Tracker",
     icon: LayoutGrid,
-    hint: "Every spot still in progress, grouped by production stage. Filter by estate to see one community's queue. Once a spot goes live it also joins the Library below.",
+    hint: "Everything still in progress, grouped by production stage. Once a spot goes live it also joins the Library below — and once it's archived as Not live, it drops off the Tracker.",
   },
   {
     key: "library",
     label: "Library",
     icon: Library,
-    hint: "Everything that's live or has been live — a running archive, searchable by type, voice, or messaging. A spot auto-expires to Not live once its end date passes, unless you push the end date forward first.",
+    hint: "Everything that's live or has been live — a running archive. A spot auto-expires to Not live once its end date passes, unless you push the end date forward first.",
   },
 ];
 
@@ -34,6 +49,8 @@ export function AudioTracker({
 }) {
   const [rows, setRows] = useState(items);
   const [view, setView] = useState<View>("tracker");
+  const [trackerLayout, setTrackerLayout] = useState<TrackerLayout>("cards");
+  const [stateFilter, setStateFilter] = useState("all");
   const [estateFilter, setEstateFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -42,30 +59,56 @@ export function AudioTracker({
   const [, startTransition] = useTransition();
 
   const estates = useMemo(() => Array.from(new Set(rows.map((r) => r.estate))).sort(), [rows]);
+  const statesInUse = useMemo(
+    () => STATE_ORDER.filter((s) => estates.some((e) => ESTATE_STATE[e] === s)),
+    [estates],
+  );
+  // When a state is picked, only offer that state's estates so the two
+  // filters can't contradict each other.
+  const estateOptions = useMemo(
+    () => (stateFilter === "all" ? estates : estates.filter((e) => estateState(e) === stateFilter)),
+    [estates, stateFilter],
+  );
   const tags = useMemo(
     () => Array.from(new Set(rows.map((r) => r.tag).filter((t): t is string => !!t))).sort(),
     [rows],
   );
 
-  const byEstate = useMemo(
-    () => (estateFilter === "all" ? rows : rows.filter((r) => r.estate === estateFilter)),
-    [rows, estateFilter],
+  function handleStateFilterChange(next: string) {
+    setStateFilter(next);
+    if (next !== "all" && estateFilter !== "all" && estateState(estateFilter) !== next) {
+      setEstateFilter("all");
+    }
+  }
+
+  const filtered = useMemo(
+    () =>
+      rows.filter((r) => {
+        if (stateFilter !== "all" && estateState(r.estate) !== stateFilter) return false;
+        if (estateFilter !== "all" && r.estate !== estateFilter) return false;
+        return true;
+      }),
+    [rows, stateFilter, estateFilter],
   );
+
+  // Not live doesn't get a Tracker column (see TRACKER_STAGES) — everything
+  // else, Live included, still shows here as well as in the Library.
+  const trackerRows = useMemo(() => filtered.filter((r) => r.status !== "notlive"), [filtered]);
 
   // The Library is the running archive of what's live or has been live — a
   // spot only joins it once it reaches that stage; anything still earlier in
   // the pipeline lives in the Tracker only.
   const libraryRows = useMemo(() => {
-    let data = byEstate.filter((r) => r.status === "live" || r.status === "notlive");
+    let data = filtered.filter((r) => r.status === "live" || r.status === "notlive");
     if (tagFilter !== "all") data = data.filter((r) => r.tag === tagFilter);
     const q = search.trim().toLowerCase();
     if (q) {
       data = data.filter((r) =>
-        [r.title, r.voice, r.tag, r.messaging].some((v) => v?.toLowerCase().includes(q)),
+        [r.title, r.voice, r.tag, r.messaging, r.key_number].some((v) => v?.toLowerCase().includes(q)),
       );
     }
     return data;
-  }, [byEstate, tagFilter, search]);
+  }, [filtered, tagFilter, search]);
 
   function handleStatusChange(id: number, status: string) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
@@ -118,10 +161,40 @@ export function AudioTracker({
               </button>
             ))}
           </div>
-          {estates.length > 1 && (
+          {view === "tracker" && (
+            <div className="flex rounded-lg border border-border-c p-1">
+              <button
+                onClick={() => setTrackerLayout("cards")}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  trackerLayout === "cards" ? "bg-gold text-ink" : "text-charcoal hover:text-ink"
+                }`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> Cards
+              </button>
+              <button
+                onClick={() => setTrackerLayout("table")}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  trackerLayout === "table" ? "bg-gold text-ink" : "text-charcoal hover:text-ink"
+                }`}
+              >
+                <List className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> Table
+              </button>
+            </div>
+          )}
+          {statesInUse.length > 1 && (
+            <Select value={stateFilter} onChange={(e) => handleStateFilterChange(e.target.value)} className="w-auto">
+              <option value="all">All states</option>
+              {statesInUse.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+          )}
+          {estateOptions.length > 1 && (
             <Select value={estateFilter} onChange={(e) => setEstateFilter(e.target.value)} className="w-auto">
               <option value="all">All estates</option>
-              {estates.map((e) => (
+              {estateOptions.map((e) => (
                 <option key={e} value={e}>
                   {e}
                 </option>
@@ -143,20 +216,48 @@ export function AudioTracker({
           description="Add the first spot with New audio — it'll show up here and move through the pipeline as it progresses."
         />
       ) : view === "tracker" ? (
-        <TrackerView rows={byEstate} isAdmin={isAdmin} onStatusChange={handleStatusChange} onEdit={openEdit} onDelete={handleDelete} />
+        trackerRows.length === 0 ? (
+          <EmptyState
+            icon={LayoutGrid}
+            title="Nothing currently in production"
+            description="Everything's either live or archived in the Library. Add a new brief with New audio to start the next one."
+          />
+        ) : trackerLayout === "cards" ? (
+          <TrackerCards rows={trackerRows} isAdmin={isAdmin} onStatusChange={handleStatusChange} onEdit={openEdit} onDelete={handleDelete} />
+        ) : (
+          <SpreadsheetTable rows={trackerRows} isAdmin={isAdmin} onStatusChange={handleStatusChange} onEdit={openEdit} onDelete={handleDelete} />
+        )
       ) : (
-        <LibraryView
-          rows={libraryRows}
-          tags={tags}
-          tagFilter={tagFilter}
-          onTagFilterChange={setTagFilter}
-          search={search}
-          onSearchChange={setSearch}
-          isAdmin={isAdmin}
-          onStatusChange={handleStatusChange}
-          onEdit={openEdit}
-          onDelete={handleDelete}
-        />
+        <div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-charcoal/50" strokeWidth={2} aria-hidden />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by title, voice, messaging, key number, or keyword…"
+                className="pl-9"
+              />
+            </div>
+            {tags.length > 0 && (
+              <Select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className="w-auto">
+                <option value="all">All types</option>
+                {tags.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </div>
+          {libraryRows.length === 0 ? (
+            <p className="py-12 text-center text-sm text-charcoal/50">
+              Nothing&rsquo;s live yet — spots show up here once they&rsquo;re marked Live on the Tracker.
+            </p>
+          ) : (
+            <SpreadsheetTable rows={libraryRows} isAdmin={isAdmin} onStatusChange={handleStatusChange} onEdit={openEdit} onDelete={handleDelete} />
+          )}
+        </div>
       )}
 
       {modalOpen && (
@@ -255,7 +356,7 @@ function RowActions({
   );
 }
 
-function TrackerView({
+function TrackerCards({
   rows,
   isAdmin,
   onStatusChange,
@@ -268,9 +369,13 @@ function TrackerView({
   onEdit: (item: AudioItemRow) => void;
   onDelete: (id: number) => void;
 }) {
+  // Only stages with at least one item get a column — an empty "Ready to
+  // launch" or "Live" column is just clutter when nothing's there.
+  const activeStages = TRACKER_STAGES.filter((stage) => rows.some((r) => r.status === stage.key));
+
   return (
     <div className="flex gap-3 overflow-x-auto pb-2">
-      {AUDIO_STAGES.map((stage) => {
+      {activeStages.map((stage) => {
         const stageRows = rows.filter((r) => r.status === stage.key);
         return (
           <div
@@ -283,41 +388,37 @@ function TrackerView({
               <div className="text-xs font-semibold text-charcoal">{stageRows.length}</div>
             </div>
             <div className="flex flex-col gap-2 px-2.5 pb-2.5">
-              {stageRows.length === 0 ? (
-                <div className="py-3 text-center text-xs text-charcoal/40">Nothing here</div>
-              ) : (
-                stageRows.map((item) => (
-                  <div key={item.id} className="group rounded-lg border border-border-c bg-bg p-2.5">
-                    <div className="mb-0.5 flex items-start justify-between gap-1">
-                      <div className="text-[10.5px] font-bold uppercase tracking-wide text-charcoal">{item.estate}</div>
-                      <div className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-                        <LinkIcons item={item} />
-                        <RowActions item={item} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />
-                      </div>
-                    </div>
-                    <div className="mb-1 text-[13px] font-semibold leading-tight text-ink">{item.title}</div>
-                    {item.key_number && <div className="mb-1 font-mono text-[10px] text-charcoal/70">{item.key_number}</div>}
-                    {item.messaging && <div className="mb-1.5 text-[11.5px] leading-snug text-charcoal">{item.messaging}</div>}
-                    <div className="flex items-center justify-between text-[11px] text-charcoal">
-                      <span>{item.station ?? "—"}</span>
-                      <span>
-                        {item.live_date ? formatAudioDate(item.live_date) : "TBC"}
-                        {" → "}
-                        {item.end_date ? formatAudioDate(item.end_date) : "Ongoing"}
-                      </span>
-                    </div>
-                    {item.placement && (
-                      <div className="mt-1.5 inline-block rounded bg-gold/15 px-1.5 py-0.5 text-[10px] font-semibold text-[#8a6300]">
-                        {item.placement}
-                      </div>
-                    )}
-                    {item.notes && <div className="mt-1.5 text-[10.5px] italic leading-snug text-charcoal/70">{item.notes}</div>}
-                    <div className="mt-2">
-                      <StatusSelect status={item.status} onChange={(s) => onStatusChange(item.id, s)} />
+              {stageRows.map((item) => (
+                <div key={item.id} className="group rounded-lg border border-border-c bg-bg p-2.5">
+                  <div className="mb-0.5 flex items-start justify-between gap-1">
+                    <div className="text-[10.5px] font-bold uppercase tracking-wide text-charcoal">{item.estate}</div>
+                    <div className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <LinkIcons item={item} />
+                      <RowActions item={item} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />
                     </div>
                   </div>
-                ))
-              )}
+                  <div className="mb-1 text-[13px] font-semibold leading-tight text-ink">{item.title}</div>
+                  {item.key_number && <div className="mb-1 font-mono text-[10px] text-charcoal/70">{item.key_number}</div>}
+                  {item.messaging && <div className="mb-1.5 text-[11.5px] leading-snug text-charcoal">{item.messaging}</div>}
+                  <div className="flex items-center justify-between text-[11px] text-charcoal">
+                    <span>{item.station ?? "—"}</span>
+                    <span>
+                      {item.live_date ? formatAudioDate(item.live_date) : "TBC"}
+                      {" → "}
+                      {item.end_date ? formatAudioDate(item.end_date) : "Ongoing"}
+                    </span>
+                  </div>
+                  {item.placement && (
+                    <div className="mt-1.5 inline-block rounded bg-gold/15 px-1.5 py-0.5 text-[10px] font-semibold text-[#8a6300]">
+                      {item.placement}
+                    </div>
+                  )}
+                  {item.notes && <div className="mt-1.5 text-[10.5px] italic leading-snug text-charcoal/70">{item.notes}</div>}
+                  <div className="mt-2">
+                    <StatusSelect status={item.status} onChange={(s) => onStatusChange(item.id, s)} />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         );
@@ -326,109 +427,69 @@ function TrackerView({
   );
 }
 
-function LibraryView({
+// Used for both the Tracker's Table layout and the Library — a dense,
+// spreadsheet-like listing close to the client's own master doc, rather
+// than the card-per-item layout.
+function SpreadsheetTable({
   rows,
-  tags,
-  tagFilter,
-  onTagFilterChange,
-  search,
-  onSearchChange,
   isAdmin,
   onStatusChange,
   onEdit,
   onDelete,
 }: {
   rows: AudioItemRow[];
-  tags: string[];
-  tagFilter: string;
-  onTagFilterChange: (v: string) => void;
-  search: string;
-  onSearchChange: (v: string) => void;
   isAdmin: boolean;
   onStatusChange: (id: number, status: string) => void;
   onEdit: (item: AudioItemRow) => void;
   onDelete: (id: number) => void;
 }) {
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-charcoal/50" strokeWidth={2} aria-hidden />
-          <Input
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search by title, voice, messaging, or keyword…"
-            className="pl-9"
-          />
-        </div>
-        {tags.length > 0 && (
-          <Select value={tagFilter} onChange={(e) => onTagFilterChange(e.target.value)} className="w-auto">
-            <option value="all">All types</option>
-            {tags.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </Select>
-        )}
-      </div>
-      {rows.length === 0 ? (
-        <p className="py-12 text-center text-sm text-charcoal/50">
-          Nothing&rsquo;s live yet — spots show up here once they&rsquo;re marked Live on the Tracker.
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <Card className="overflow-x-auto p-0">
+      <table className="w-full whitespace-nowrap text-sm">
+        <thead>
+          <tr className="border-b border-border-c text-left text-xs uppercase text-charcoal">
+            <th className="px-4 py-3">Estate</th>
+            <th className="px-4 py-3">Title</th>
+            <th className="px-4 py-3">Tag</th>
+            <th className="px-4 py-3">Duration</th>
+            <th className="px-4 py-3">Key number</th>
+            <th className="px-4 py-3">Live → End</th>
+            <th className="px-4 py-3">Notes</th>
+            <th className="px-4 py-3">Links</th>
+            <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody>
           {rows.map((item) => (
-              <Card key={item.id} className="flex flex-col">
-                <div className="mb-1 flex items-start justify-between gap-1">
-                  <div className="text-[10.5px] font-bold uppercase tracking-wide text-charcoal">{item.estate}</div>
-                  <RowActions item={item} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />
-                </div>
-                <div className="mb-1.5 text-[14.5px] font-bold text-ink">{item.title}</div>
-                {item.key_number && <div className="mb-1 font-mono text-[10px] text-charcoal/70">{item.key_number}</div>}
-                {item.messaging && <div className="mb-2.5 text-xs leading-snug text-charcoal">{item.messaging}</div>}
-                <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-                  {item.tag && (
-                    <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10.5px] font-semibold text-charcoal">{item.tag}</span>
-                  )}
-                  <StatusSelect status={item.status} onChange={(s) => onStatusChange(item.id, s)} />
-                </div>
-                <div className="mb-2.5 flex flex-wrap justify-between gap-1 text-[11.5px] text-charcoal">
-                  <span>Voice: {item.voice ?? "TBC"}</span>
-                  <span>{item.duration ?? "—"}</span>
-                  <span>
-                    {item.live_date ? formatAudioDate(item.live_date) : "TBC"} →{" "}
-                    {item.end_date ? formatAudioDate(item.end_date) : "Ongoing"}
-                  </span>
-                </div>
-                {item.notes && <div className="mb-2.5 text-[11px] italic leading-snug text-charcoal/70">{item.notes}</div>}
-                <div className="mt-auto flex gap-2 border-t border-border-c pt-2.5">
-                  {item.audio_url && (
-                    <a
-                      href={item.audio_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-lg border border-border-c bg-bg px-2.5 py-1 text-[11.5px] font-semibold text-ink hover:border-gold/50"
-                    >
-                      ▶ Audio file
-                    </a>
-                  )}
-                  {item.script_url && (
-                    <a
-                      href={item.script_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-lg border border-border-c bg-bg px-2.5 py-1 text-[11.5px] font-semibold text-ink hover:border-gold/50"
-                    >
-                      📄 Script
-                    </a>
-                  )}
-                </div>
-              </Card>
+            <tr key={item.id} className="border-b border-border-c last:border-0 align-top">
+              <td className="px-4 py-3 font-semibold text-ink">{item.estate}</td>
+              <td className="whitespace-normal px-4 py-3">
+                <div className="font-semibold text-ink">{item.title}</div>
+                {item.messaging && <div className="text-xs text-charcoal">{item.messaging}</div>}
+              </td>
+              <td className="px-4 py-3 text-charcoal">{item.tag ?? "—"}</td>
+              <td className="px-4 py-3 text-charcoal">{item.duration ?? "—"}</td>
+              <td className="px-4 py-3 font-mono text-xs text-charcoal">{item.key_number ?? "—"}</td>
+              <td className="px-4 py-3 text-charcoal">
+                {item.live_date ? formatAudioDate(item.live_date) : "TBC"} →{" "}
+                {item.end_date ? formatAudioDate(item.end_date) : "Ongoing"}
+              </td>
+              <td className="whitespace-normal px-4 py-3 text-xs italic text-charcoal">{item.notes ?? "—"}</td>
+              <td className="px-4 py-3">
+                <LinkIcons item={item} />
+              </td>
+              <td className="px-4 py-3">
+                <StatusSelect status={item.status} onChange={(s) => onStatusChange(item.id, s)} />
+              </td>
+              <td className="px-4 py-3 text-right">
+                <RowActions item={item} isAdmin={isAdmin} onEdit={onEdit} onDelete={onDelete} />
+              </td>
+            </tr>
           ))}
-        </div>
-      )}
-    </div>
+        </tbody>
+      </table>
+    </Card>
   );
 }
 
