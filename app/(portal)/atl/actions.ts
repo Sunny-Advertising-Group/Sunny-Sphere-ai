@@ -245,7 +245,7 @@ export async function logAtlChecklist(atlLinkId: number) {
 // runs radio/audio spots split by estate) ---
 
 const AUDIO_SELECT =
-  "id, client_id, estate, title, tag, messaging, placement, station, voice, duration, script_url, audio_url, live_date, end_date, status, sort_order";
+  "id, client_id, estate, title, tag, messaging, placement, station, voice, duration, script_url, audio_url, live_date, end_date, status, key_number, notes, sort_order";
 
 const AUDIO_STATUS_KEYS = new Set<string>(AUDIO_STAGES.map((s) => s.key));
 
@@ -265,6 +265,8 @@ function audioFieldsFromForm(formData: FormData) {
     live_date: String(formData.get("live_date") ?? "").trim() || null,
     end_date: String(formData.get("end_date") ?? "").trim() || null,
     status: AUDIO_STATUS_KEYS.has(status) ? status : "briefed",
+    key_number: String(formData.get("key_number") ?? "").trim() || null,
+    notes: String(formData.get("notes") ?? "").trim() || null,
   };
 }
 

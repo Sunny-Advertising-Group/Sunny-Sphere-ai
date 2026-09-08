@@ -43,8 +43,19 @@ export type AudioItemRow = {
   duration: string | null;
   script_url: string | null;
   audio_url: string | null;
-  live_date: string | null;
-  end_date: string | null;
+  live_date: string | null; // ISO date (YYYY-MM-DD), null = not yet scheduled (TBC)
+  end_date: string | null; // ISO date (YYYY-MM-DD), null = ongoing/no fixed end
   status: string;
+  key_number: string | null;
+  notes: string | null;
   sort_order: number;
 };
+
+// Display-only formatting for the date fields above — "3 Oct 2026" rather
+// than the raw ISO string. Parsed as a plain date (no timezone shift) since
+// these are calendar dates, not instants.
+export function formatAudioDate(iso: string | null): string {
+  if (!iso) return "";
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
