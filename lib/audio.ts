@@ -59,3 +59,31 @@ export function formatAudioDate(iso: string | null): string {
   const [year, month, day] = iso.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
+
+// Which state each Lincoln Place estate/community sits in, so the tracker
+// can filter by state as well as by individual estate. Any estate typed in
+// that isn't listed here (a new one, or a typo) just won't have a state —
+// it still shows up filtered by estate, only the state filter won't catch it.
+export const STATE_ORDER = ["QLD", "NSW", "VIC"] as const;
+
+export const ESTATE_STATE: Record<string, (typeof STATE_ORDER)[number]> = {
+  Townsville: "QLD",
+  Yeppoon: "QLD",
+  Mackay: "QLD",
+  Bundaberg: "QLD",
+  "Northern Rivers": "QLD",
+  Griffith: "NSW",
+  "Mudgee Spring": "NSW",
+  Moama: "NSW",
+  "Eden Gardens": "NSW",
+  Tamworth: "NSW",
+  Wangaratta: "VIC",
+  "Eagle Point": "VIC",
+  Huntly: "VIC",
+  "Kangaroo Flat": "VIC",
+  Baranduda: "VIC",
+};
+
+export function estateState(estate: string): string | null {
+  return ESTATE_STATE[estate] ?? null;
+}
