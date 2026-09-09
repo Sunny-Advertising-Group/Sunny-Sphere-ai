@@ -331,7 +331,11 @@ export async function addAudioItem(_prevState: unknown, formData: FormData) {
     .single();
   if (error) return { error: error.message };
 
+  // The tracker lives on the client detail page (/atl/[client]), not /atl
+  // itself — revalidating just "/atl" left that page's cached RSC payload
+  // stale until a hard refresh forced a fresh fetch.
   revalidatePath("/atl");
+  revalidatePath("/atl/[client]", "page");
   return { success: true, item: data };
 }
 
@@ -352,6 +356,7 @@ export async function updateAudioItem(_prevState: unknown, formData: FormData) {
   if (error) return { error: error.message };
 
   revalidatePath("/atl");
+  revalidatePath("/atl/[client]", "page");
   return { success: true, item: data };
 }
 
@@ -363,6 +368,7 @@ export async function updateAudioItemStatus(id: number, status: string) {
   if (error) return { error: error.message };
 
   revalidatePath("/atl");
+  revalidatePath("/atl/[client]", "page");
   return { success: true };
 }
 
@@ -372,6 +378,7 @@ export async function deleteAudioItem(id: number) {
   if (error) return { error: error.message };
 
   revalidatePath("/atl");
+  revalidatePath("/atl/[client]", "page");
   return { success: true };
 }
 
