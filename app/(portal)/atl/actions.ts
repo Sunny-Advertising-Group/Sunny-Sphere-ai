@@ -70,6 +70,36 @@ export async function updateClient(_prevState: unknown, formData: FormData) {
   return { success: true, client: data };
 }
 
+// Monthly/quarterly bulk update of just the two figures admins actually need
+// to revisit on a cadence — retainer and ATL revenue — via the CSV round-trip
+// in ClientsManager (download, edit in Excel/Sheets, re-upload). Only ever
+// touches these two columns per row, scoped by id, so a stale or partial
+// re-upload can't clobber anything else about a client.
+export async function bulkUpdateFinancials(
+  updates: { id: number; retainer: number | null; atl_revenue: number | null }[],
+) {
+  if (updates.length === 0) return { error: "No rows to update." };
+
+  const supabase = await createClient();
+  const results = await Promise.all(
+    updates.map((u) =>
+      supabase
+        .from("clients")
+        .update({ retainer: u.retainer, atl_revenue: u.atl_revenue })
+        .eq("id", u.id),
+    ),
+  );
+  const failed = results.filter((r) => r.error);
+  if (failed.length > 0) {
+    return { error: `${failed.length} of ${updates.length} row(s) failed: ${failed[0].error!.message}` };
+  }
+
+  revalidatePath("/atl");
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true, updated: updates.length };
+}
+
 export async function addClientAssignee(clientId: number, profileId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("atl_client_assignees").insert({ client_id: clientId, profile_id: profileId });
