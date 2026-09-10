@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
+import { BarChart3, Radio } from "lucide-react";
 import {
   addAtlClientOwner,
   addAtlLink,
@@ -401,13 +402,9 @@ export function ClientsManager({
                   <span className="rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-charcoal">
                     {client.team}
                   </span>
-                  {client.on_atl && (
-                    <span className="rounded-full border border-blue-300 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
-                      ATL
-                    </span>
-                  )}
+                  {client.on_atl && <span className="rounded-full border border-border-c px-2 py-0.5 text-[11px] font-semibold text-charcoal">ATL</span>}
                   {client.on_digital && (
-                    <span className="rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                    <span className="rounded-full border border-border-c px-2 py-0.5 text-[11px] font-semibold text-charcoal">
                       Digital
                     </span>
                   )}
@@ -447,8 +444,16 @@ export function ClientsManager({
               </div>
 
               {client.on_atl && (
-                <div className="mt-4 rounded-r-lg border-l-4 border-blue-300 bg-blue-50/40 py-3 pl-4 pr-3">
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-blue-700">ATL</div>
+                <div className="mt-4 rounded-lg border-t-4 border-charcoal bg-black/5 p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="flex h-[22px] w-[22px] flex-none items-center justify-center rounded-md bg-charcoal text-white">
+                      <Radio className="h-3 w-3" strokeWidth={2} aria-hidden />
+                    </span>
+                    <span className="text-[13px] font-bold uppercase tracking-wide text-ink">ATL</span>
+                    <span className="text-[11px] text-charcoal">
+                      Above-the-line — assignment, revenue split & flight plans
+                    </span>
+                  </div>
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-charcoal">ATL assigned</span>
                     <AssigneePicker
@@ -494,8 +499,16 @@ export function ClientsManager({
               )}
 
               {client.on_digital && (
-                <div className="mt-4 rounded-r-lg border-l-4 border-violet-300 bg-violet-50/40 py-3 pl-4 pr-3">
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-violet-700">Digital</div>
+                <div className="mt-4 rounded-lg border-t-4 border-gold bg-gold/10 p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="flex h-[22px] w-[22px] flex-none items-center justify-center rounded-md bg-gold text-ink">
+                      <BarChart3 className="h-3 w-3" strokeWidth={2} aria-hidden />
+                    </span>
+                    <span className="text-[13px] font-bold uppercase tracking-wide text-ink">Digital</span>
+                    <span className="text-[11px] text-charcoal">
+                      Programmatic & channel retainer, split & ownership
+                    </span>
+                  </div>
                   <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2">
                     <span className="text-xs text-charcoal">
                       {DIGITAL_STATUSES.find((s) => s.value === client.digital_status)?.label ?? "Active"}
