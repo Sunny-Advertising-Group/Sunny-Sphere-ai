@@ -401,9 +401,13 @@ export function ClientsManager({
                   <span className="rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-charcoal">
                     {client.team}
                   </span>
-                  {client.on_atl && <span className="rounded-full border border-border-c px-2 py-0.5 text-[11px] font-semibold text-charcoal">ATL</span>}
+                  {client.on_atl && (
+                    <span className="rounded-full border border-blue-300 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                      ATL
+                    </span>
+                  )}
                   {client.on_digital && (
-                    <span className="rounded-full border border-border-c px-2 py-0.5 text-[11px] font-semibold text-charcoal">
+                    <span className="rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
                       Digital
                     </span>
                   )}
@@ -443,7 +447,8 @@ export function ClientsManager({
               </div>
 
               {client.on_atl && (
-                <div className="mt-4 border-t border-border-c pt-4">
+                <div className="mt-4 rounded-r-lg border-l-4 border-blue-300 bg-blue-50/40 py-3 pl-4 pr-3">
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-blue-700">ATL</div>
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-charcoal">ATL assigned</span>
                     <AssigneePicker
@@ -489,7 +494,8 @@ export function ClientsManager({
               )}
 
               {client.on_digital && (
-                <div className="mt-4 border-t border-border-c pt-4">
+                <div className="mt-4 rounded-r-lg border-l-4 border-violet-300 bg-violet-50/40 py-3 pl-4 pr-3">
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-violet-700">Digital</div>
                   <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2">
                     <span className="text-xs text-charcoal">
                       {DIGITAL_STATUSES.find((s) => s.value === client.digital_status)?.label ?? "Active"}
