@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
-import { BarChart3, Radio } from "lucide-react";
+import { useMemo, useRef, useState, useTransition, type ChangeEvent } from "react";
+import { BarChart3, Download, Radio, Upload } from "lucide-react";
 import {
   addAtlClientOwner,
   addAtlLink,
   addClient,
   addClientAssignee,
   addPendingAssignee,
+  bulkUpdateFinancials,
   deleteAtlLink,
   deleteClient,
   removeAtlClientOwner,
@@ -39,6 +40,130 @@ import { CADENCE_OPTIONS, CHANNEL_OPTIONS, cadenceLabel, channelLabel } from "@/
 // the React Compiler eslint rules.
 function nextTempId(): number {
   return -Date.now();
+}
+
+// --- Retainer/ATL revenue bulk update via CSV (see BulkFinancialsCard) —
+// downloaded, edited in Excel/Sheets, re-uploaded. Client ID is the match
+// key; everything else in the sheet is reference-only and ignored on
+// import, so a stale re-upload can't clobber anything but these two figures.
+
+function csvCell(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function buildFinancialsCsv(rows: ClientRow[]): string {
+  const header = ["Client ID", "Client Name", "Team", "On ATL", "On Digital", "Retainer ($)", "ATL Revenue ($)"];
+  const lines = [header.map(csvCell).join(",")];
+  for (const c of rows) {
+    lines.push(
+      [
+        String(c.id),
+        c.name,
+        c.team,
+        c.on_atl ? "Yes" : "No",
+        c.on_digital ? "Yes" : "No",
+        c.retainer != null ? String(c.retainer) : "",
+        c.atl_revenue != null ? String(c.atl_revenue) : "",
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return lines.join("\n");
+}
+
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Minimal RFC4180-ish parser (quoted fields, doubled-quote escaping) — the
+// client names being matched against can contain commas, so a naive split(",")
+// isn't safe.
+function parseCsvText(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      row.push(field);
+      field = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      rows.push(row);
+      row = [];
+    } else {
+      field += ch;
+    }
+  }
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+type FinancialsUpdate = { id: number; retainer: number | null; atl_revenue: number | null };
+
+function parseFinancialsCsv(text: string): { updates: FinancialsUpdate[]; errors: string[] } {
+  const rows = parseCsvText(text);
+  if (rows.length === 0) return { updates: [], errors: ["File is empty."] };
+
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const idIdx = header.findIndex((h) => h.includes("client id") || h === "id");
+  const retainerIdx = header.findIndex((h) => h.includes("retainer"));
+  const atlRevenueIdx = header.findIndex((h) => h.includes("atl revenue"));
+  if (idIdx === -1) {
+    return { updates: [], errors: ['Couldn\'t find a "Client ID" column — don\'t remove or rename it.'] };
+  }
+
+  const updates: FinancialsUpdate[] = [];
+  const errors: string[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const cells = rows[i];
+    const idRaw = cells[idIdx]?.trim();
+    const id = Number(idRaw);
+    if (!idRaw || !Number.isFinite(id)) {
+      errors.push(`Row ${i + 1}: missing or invalid Client ID.`);
+      continue;
+    }
+
+    const parseMoney = (raw: string | undefined, label: string): number | null | undefined => {
+      const trimmed = (raw ?? "").trim().replace(/[$,]/g, "");
+      if (trimmed === "") return null;
+      const n = Number(trimmed);
+      if (!Number.isFinite(n)) {
+        errors.push(`Row ${i + 1}: "${label}" isn't a number ("${raw}").`);
+        return undefined;
+      }
+      return n;
+    };
+
+    const retainer = retainerIdx === -1 ? null : parseMoney(cells[retainerIdx], "Retainer");
+    const atlRevenue = atlRevenueIdx === -1 ? null : parseMoney(cells[atlRevenueIdx], "ATL Revenue");
+    if (retainer === undefined || atlRevenue === undefined) continue;
+
+    updates.push({ id, retainer, atl_revenue: atlRevenue });
+  }
+  return { updates, errors };
 }
 
 const TEAMS = ["ATL", "Digital", "Comms"];
@@ -336,9 +461,22 @@ export function ClientsManager({
     });
   }
 
+  async function applyFinancialsUpdates(updates: FinancialsUpdate[]) {
+    const result = await bulkUpdateFinancials(updates);
+    if (!(result as { error?: string })?.error) {
+      const byId = new Map(updates.map((u) => [u.id, u]));
+      setClientRows((prev) =>
+        prev.map((c) => (byId.has(c.id) ? { ...c, retainer: byId.get(c.id)!.retainer, atl_revenue: byId.get(c.id)!.atl_revenue } : c)),
+      );
+    }
+    return result;
+  }
+
   return (
     <div className="space-y-6">
       <AddClientForm tiers={tiers} onAdded={(c) => setClientRows((prev) => [...prev, c])} />
+
+      <BulkFinancialsCard clientRows={clientRows} onApply={applyFinancialsUpdates} />
 
       {clientRows.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
@@ -1082,6 +1220,104 @@ function ClientFieldset({
         </>
       )}
     </>
+  );
+}
+
+// Monthly/quarterly retainer & ATL revenue round-trip: download the current
+// figures as a CSV, edit them in Excel/Sheets, re-upload — only those two
+// columns ever change, matched by Client ID.
+function BulkFinancialsCard({
+  clientRows,
+  onApply,
+}: {
+  clientRows: ClientRow[];
+  onApply: (updates: FinancialsUpdate[]) => Promise<{ error?: string; updated?: number } | undefined>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [parsed, setParsed] = useState<{ updates: FinancialsUpdate[]; errors: string[] } | null>(null);
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<{ error?: string; updated?: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function download() {
+    downloadTextFile(`retainer-atl-revenue-${new Date().toISOString().slice(0, 10)}.csv`, buildFinancialsCsv(clientRows));
+  }
+
+  function handleFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setResult(null);
+    const reader = new FileReader();
+    reader.onload = () => setParsed(parseFinancialsCsv(String(reader.result ?? "")));
+    reader.readAsText(file);
+  }
+
+  async function apply() {
+    if (!parsed || parsed.updates.length === 0) return;
+    setPending(true);
+    const res = await onApply(parsed.updates);
+    setPending(false);
+    setResult(res ?? { error: "Something went wrong." });
+    if (!res?.error) {
+      setParsed(null);
+      setFileName(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button variant="ghost" onClick={() => setOpen(true)}>
+        + Bulk update retainer & ATL revenue
+      </Button>
+    );
+  }
+
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-bold text-ink">Bulk update retainer & ATL revenue</div>
+          <p className="mt-0.5 text-xs text-charcoal">
+            Download the sheet, change the figures for the month/quarter, then upload it back — everything else in
+            the file is reference only and won&rsquo;t be touched.
+          </p>
+        </div>
+        <button onClick={() => setOpen(false)} className="text-xs font-semibold text-charcoal hover:text-ink">
+          Close
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="ghost" onClick={download} className="gap-1.5">
+          <Download className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> Download CSV
+        </Button>
+        <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-border-c px-4 py-2.5 text-sm font-semibold text-ink hover:border-gold/50">
+          <Upload className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          {fileName ?? "Upload CSV"}
+          <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
+        </label>
+        {parsed && parsed.updates.length > 0 && (
+          <Button onClick={apply} disabled={pending}>
+            {pending ? "Applying…" : `Apply ${parsed.updates.length} row${parsed.updates.length === 1 ? "" : "s"}`}
+          </Button>
+        )}
+      </div>
+
+      {parsed && parsed.errors.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+          {parsed.errors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      )}
+      {result?.error && <p className="text-xs font-medium text-red-600">{result.error}</p>}
+      {result?.updated !== undefined && !result.error && (
+        <p className="text-xs font-medium text-emerald-700">Updated {result.updated} client(s).</p>
+      )}
+    </Card>
   );
 }
 
