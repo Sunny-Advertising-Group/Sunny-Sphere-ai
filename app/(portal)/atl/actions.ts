@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { periodStart } from "@/lib/digitalOpti";
 import { AUDIO_STAGES } from "@/lib/audio";
-import { serviceLevelCadence } from "@/lib/atl";
 
 // `clients` is the single shared roster for both ATL and Digital — a client
 // can be on either, both, or neither (on_atl/on_digital), with shared fields
@@ -435,33 +434,115 @@ export async function unlogAtlChecklist(atlLinkId: number) {
   return { success: true };
 }
 
-// --- Service level: ticking one of the three fixed client obligations
-// (call/face_to_face/proactive) off for its current cadence period, with a
-// short note captured on every tick ---
+// --- Service level: a fully configurable per-client task list (report sent,
+// WAG checks, client phone call, etc), each with its own cadence and an
+// assignee. Admins manage the task list itself; anyone on ATL can tick a
+// task off for its current cadence period, picking who actually completed it
+// (not necessarily themselves) with an optional note. ---
 
-export async function logAtlServiceLevel(clientId: number, kind: string, note: string) {
+const SERVICE_TASK_SELECT = "id, client_id, title, cadence, assigned_to, sort_order";
+
+export async function addServiceTask(clientId: number, title: string, cadence: string, assignedTo: string | null) {
+  const supabase = await createClient();
+  const trimmed = title.trim();
+  if (!trimmed || !cadence) return { error: "Give the task a title and a cadence." };
+
+  const { data: existing } = await supabase
+    .from("atl_service_level_tasks")
+    .select("sort_order")
+    .eq("client_id", clientId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const sortOrder = (existing?.[0]?.sort_order ?? -1) + 1;
+
+  const { data, error } = await supabase
+    .from("atl_service_level_tasks")
+    .insert({ client_id: clientId, title: trimmed, cadence, assigned_to: assignedTo, sort_order: sortOrder })
+    .select(SERVICE_TASK_SELECT)
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
+  return { success: true, task: data };
+}
+
+// Adds the same task to every ATL client at once (e.g. "Client phone call").
+export async function bulkAddServiceTaskToAllClients(title: string, cadence: string) {
+  const supabase = await createClient();
+  const trimmed = title.trim();
+  if (!trimmed || !cadence) return { error: "Give the task a title and a cadence." };
+
+  const { data: clients, error: clientsError } = await supabase.from("clients").select("id").eq("on_atl", true);
+  if (clientsError) return { error: clientsError.message };
+  if (!clients || clients.length === 0) return { error: "No ATL clients to add it to." };
+
+  const { data, error } = await supabase
+    .from("atl_service_level_tasks")
+    .insert(clients.map((c) => ({ client_id: c.id, title: trimmed, cadence, sort_order: 100 })))
+    .select(SERVICE_TASK_SELECT);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
+  return { success: true, tasks: data, count: data?.length ?? 0 };
+}
+
+export async function updateServiceTask(
+  taskId: number,
+  fields: { title?: string; cadence?: string; assignedTo?: string | null },
+) {
+  const supabase = await createClient();
+  const update: Record<string, unknown> = {};
+  if (fields.title !== undefined) {
+    const trimmed = fields.title.trim();
+    if (!trimmed) return { error: "Task title can't be empty." };
+    update.title = trimmed;
+  }
+  if (fields.cadence !== undefined) update.cadence = fields.cadence;
+  if (fields.assignedTo !== undefined) update.assigned_to = fields.assignedTo;
+
+  const { error } = await supabase.from("atl_service_level_tasks").update(update).eq("id", taskId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function deleteServiceTask(taskId: number) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("atl_service_level_tasks").delete().eq("id", taskId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function logServiceTask(taskId: number, completedBy: string, note: string) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
-  const cadence = serviceLevelCadence(kind);
-  const start = periodStart(cadence).toISOString();
+  const { data: task } = await supabase.from("atl_service_level_tasks").select("cadence").eq("id", taskId).single();
+  if (!task?.cadence) return { error: "Task not found." };
+
+  const start = periodStart(task.cadence).toISOString();
   const { data: existing } = await supabase
     .from("atl_service_level_logs")
     .select("id")
-    .eq("client_id", clientId)
-    .eq("kind", kind)
+    .eq("task_id", taskId)
     .is("voided_at", null)
     .gte("completed_at", start)
     .limit(1);
   if (existing && existing.length > 0) return { success: true };
 
   const { error } = await supabase.from("atl_service_level_logs").insert({
-    client_id: clientId,
-    kind,
-    completed_by: user.id,
+    task_id: taskId,
+    completed_by: completedBy || user.id,
     note: note.trim() || null,
   });
   if (error) return { error: error.message };
@@ -470,20 +551,21 @@ export async function logAtlServiceLevel(clientId: number, kind: string, note: s
   return { success: true };
 }
 
-export async function unlogAtlServiceLevel(clientId: number, kind: string) {
+export async function unlogServiceTask(taskId: number) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
-  const cadence = serviceLevelCadence(kind);
-  const start = periodStart(cadence).toISOString();
+  const { data: task } = await supabase.from("atl_service_level_tasks").select("cadence").eq("id", taskId).single();
+  if (!task?.cadence) return { error: "Task not found." };
+
+  const start = periodStart(task.cadence).toISOString();
   const { error } = await supabase
     .from("atl_service_level_logs")
     .update({ voided_at: new Date().toISOString(), voided_by: user.id })
-    .eq("client_id", clientId)
-    .eq("kind", kind)
+    .eq("task_id", taskId)
     .is("voided_at", null)
     .gte("completed_at", start);
   if (error) return { error: error.message };
@@ -494,7 +576,7 @@ export async function unlogAtlServiceLevel(clientId: number, kind: string) {
 
 // --- Admin: service level audit log (verify / deny a tick) ---
 
-export async function voidServiceLevelLog(logId: number) {
+export async function voidServiceTaskLog(logId: number) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -512,7 +594,7 @@ export async function voidServiceLevelLog(logId: number) {
   return { success: true };
 }
 
-export async function restoreServiceLevelLog(logId: number) {
+export async function restoreServiceTaskLog(logId: number) {
   const supabase = await createClient();
   const { error } = await supabase
     .from("atl_service_level_logs")

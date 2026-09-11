@@ -17,23 +17,46 @@ export default async function AtlPage() {
 
   const supabase = await createClient();
   const now = currentInstant();
-  const [{ data: clients }, { data: rawLinks }, { data: checklistLogs }, { data: serviceLevelLogs }, { data: loaLinks }] =
-    await Promise.all([
-      supabase.from("clients").select("id, name, colour, team, is_active").eq("on_atl", true).order("name"),
-      supabase
-        .from("atl_links")
-        .select("id, client_id, kind, title, url, version_label, cadence, client:clients(name, colour)")
-        .order("sort_order"),
-      supabase
-        .from("atl_checklist_logs")
-        .select("atl_link_id, completed_at, voided_at")
-        .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
-      supabase
-        .from("atl_service_level_logs")
-        .select("client_id, kind, completed_at, voided_at, note")
-        .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
-      supabase.from("resources").select("id, title, url").eq("section", "atl_loa_link").order("sort_order"),
-    ]);
+  const [
+    { data: clients },
+    { data: rawLinks },
+    { data: checklistLogs },
+    { data: serviceTasks },
+    { data: serviceTaskLogs },
+    { data: loaLinks },
+    { data: rawAssignees },
+    { data: people },
+  ] = await Promise.all([
+    supabase.from("clients").select("id, name, colour, team, is_active").eq("on_atl", true).order("name"),
+    supabase
+      .from("atl_links")
+      .select("id, client_id, kind, title, url, version_label, cadence, client:clients(name, colour)")
+      .order("sort_order"),
+    supabase
+      .from("atl_checklist_logs")
+      .select("atl_link_id, completed_at, voided_at")
+      .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
+    supabase
+      .from("atl_service_level_tasks")
+      .select("id, client_id, title, cadence, assigned_to, sort_order")
+      .order("client_id")
+      .order("sort_order"),
+    supabase
+      .from("atl_service_level_logs")
+      .select("task_id, completed_by, completed_at, voided_at, note")
+      .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
+    supabase.from("resources").select("id, title, url").eq("section", "atl_loa_link").order("sort_order"),
+    supabase.from("atl_client_assignees").select("client_id, profile_id"),
+    supabase.from("profiles").select("id, full_name, email").order("full_name"),
+  ]);
+
+  const peopleById = new Map((people ?? []).map((p) => [p.id, p.full_name || p.email]));
+  const assigneesByClient = new Map<number, { id: string; name: string }[]>();
+  for (const a of rawAssignees ?? []) {
+    const arr = assigneesByClient.get(a.client_id) ?? [];
+    arr.push({ id: a.profile_id, name: peopleById.get(a.profile_id) ?? "Unknown" });
+    assigneesByClient.set(a.client_id, arr);
+  }
 
   const onAtlNames = new Set((clients ?? []).map((c) => c.name));
   const links: LinkRow[] = (rawLinks ?? [])
@@ -70,9 +93,13 @@ export default async function AtlPage() {
         clients={clients ?? []}
         links={links}
         checklistLogs={checklistLogs ?? []}
-        serviceLevelLogs={serviceLevelLogs ?? []}
+        serviceTasks={serviceTasks ?? []}
+        serviceTaskLogs={serviceTaskLogs ?? []}
         loaLinks={loaLinks ?? []}
+        assigneesByClient={Object.fromEntries(assigneesByClient)}
+        people={(people ?? []).map((p) => ({ id: p.id, name: p.full_name || p.email }))}
         isAdmin={visibility.isAdmin}
+        currentUserId={visibility.profile.id}
       />
     </div>
   );

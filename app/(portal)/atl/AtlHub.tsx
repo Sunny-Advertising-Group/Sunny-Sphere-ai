@@ -1,25 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
-import { BarChart3, Check, ChevronDown, ChevronRight, X } from "lucide-react";
-import { Button, Card, EmptyState, Textarea } from "@/components/ui";
+import { useMemo, useState, useTransition, type ChangeEvent } from "react";
+import { BarChart3, Check, ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
+import { Button, Card, EmptyState, Input, Select, Textarea } from "@/components/ui";
 import {
   buildAtlChecklistData,
-  buildServiceLevelData,
+  buildServiceTaskData,
   cadenceLabel,
   categoryKind,
   groupChecklistByClient,
-  groupServiceLevelByClient,
+  groupServiceTasksByClient,
   kindLabel,
+  CADENCE_OPTIONS,
   KIND_ORDER,
-  SERVICE_LEVEL_KINDS,
+  SERVICE_TASK_STATUS_META,
   type ChecklistLogInput,
-  type ServiceLevelItem,
-  type ServiceLevelLogInput,
+  type ServiceTaskInput,
+  type ServiceTaskItem,
+  type ServiceTaskLogInput,
 } from "@/lib/atl";
-import { logAtlChecklist, logAtlServiceLevel, unlogAtlChecklist, unlogAtlServiceLevel } from "./actions";
+import {
+  addServiceTask,
+  bulkAddServiceTaskToAllClients,
+  deleteServiceTask,
+  logAtlChecklist,
+  logServiceTask,
+  unlogAtlChecklist,
+  unlogServiceTask,
+  updateServiceTask,
+} from "./actions";
 import { LoaLinks, type LoaLink } from "./LoaLinks";
+
+export type PersonRow = { id: string; name: string };
 
 const TEAM_ORDER = ["ATL", "Digital", "Comms"];
 
@@ -47,23 +60,33 @@ export function AtlHub({
   clients,
   links,
   checklistLogs,
-  serviceLevelLogs,
+  serviceTasks,
+  serviceTaskLogs,
   loaLinks,
+  assigneesByClient,
+  people,
   isAdmin,
+  currentUserId,
 }: {
   clients: ClientRow[];
   links: LinkRow[];
   checklistLogs: ChecklistLogInput[];
-  serviceLevelLogs: ServiceLevelLogInput[];
+  serviceTasks: ServiceTaskInput[];
+  serviceTaskLogs: ServiceTaskLogInput[];
   loaLinks: LoaLink[];
+  assigneesByClient: Record<number, PersonRow[]>;
+  people: PersonRow[];
   isAdmin: boolean;
+  currentUserId: string;
 }) {
   const [view, setView] = useState<"checklist" | "client" | "category">("checklist");
   const [openKinds, setOpenKinds] = useState<Set<string>>(new Set());
   const [logs, setLogs] = useState(checklistLogs);
-  const [slLogs, setSlLogs] = useState(serviceLevelLogs);
-  const [noteModalItem, setNoteModalItem] = useState<ServiceLevelItem | null>(null);
+  const [tasks, setTasks] = useState(serviceTasks);
+  const [taskLogs, setTaskLogs] = useState(serviceTaskLogs);
+  const [completeModalItem, setCompleteModalItem] = useState<ServiceTaskItem | null>(null);
   const [, startTransition] = useTransition();
+  const peopleByIdMap = useMemo(() => new Map(people.map((p) => [p.id, p.name])), [people]);
 
   function toggleKind(kind: string) {
     setOpenKinds((prev) => {
@@ -115,36 +138,74 @@ export function AtlHub({
     });
   }
 
-  const serviceLevel = useMemo(
+  const serviceTaskData = useMemo(
     () =>
-      buildServiceLevelData(
+      buildServiceTaskData(
         clients.map((c) => ({ id: c.id, name: c.name, colour: c.colour })),
-        slLogs,
+        tasks,
+        taskLogs,
       ),
-    [clients, slLogs],
+    [clients, tasks, taskLogs],
   );
 
-  function logServiceLevel(clientId: number, kind: string, note: string) {
+  function completeTask(taskId: number, completedBy: string, note: string) {
     const optimisticStamp = new Date().toISOString();
-    setSlLogs((prev) => [...prev, { client_id: clientId, kind, completed_at: optimisticStamp, voided_at: null, note: note || null }]);
+    setTaskLogs((prev) => [
+      ...prev,
+      { task_id: taskId, completed_by: completedBy, completed_at: optimisticStamp, voided_at: null, note: note || null },
+    ]);
     startTransition(async () => {
-      const result = await logAtlServiceLevel(clientId, kind, note);
+      const result = await logServiceTask(taskId, completedBy, note);
       if ((result as { error?: string })?.error) {
-        setSlLogs((prev) => prev.filter((l) => !(l.client_id === clientId && l.kind === kind && l.completed_at === optimisticStamp)));
+        setTaskLogs((prev) => prev.filter((l) => !(l.task_id === taskId && l.completed_at === optimisticStamp)));
       }
     });
   }
 
-  function untickServiceLevel(clientId: number, kind: string) {
+  function untickTask(taskId: number) {
     const voidedAt = new Date().toISOString();
-    let reverted: ServiceLevelLogInput[] = slLogs;
-    setSlLogs((prev) => {
+    let reverted: ServiceTaskLogInput[] = taskLogs;
+    setTaskLogs((prev) => {
       reverted = prev;
-      return prev.map((l) => (l.client_id === clientId && l.kind === kind && !l.voided_at ? { ...l, voided_at: voidedAt } : l));
+      return prev.map((l) => (l.task_id === taskId && !l.voided_at ? { ...l, voided_at: voidedAt } : l));
     });
     startTransition(async () => {
-      const result = await unlogAtlServiceLevel(clientId, kind);
-      if ((result as { error?: string })?.error) setSlLogs(reverted);
+      const result = await unlogServiceTask(taskId);
+      if ((result as { error?: string })?.error) setTaskLogs(reverted);
+    });
+  }
+
+  function addTask(clientId: number, title: string, cadence: string, assignedTo: string | null) {
+    startTransition(async () => {
+      const result = await addServiceTask(clientId, title, cadence, assignedTo);
+      const task = (result as { task?: ServiceTaskInput })?.task;
+      if (task) setTasks((prev) => [...prev, task]);
+    });
+  }
+
+  function editTask(taskId: number, fields: { cadence?: string; assignedTo?: string | null }) {
+    const reverted = tasks;
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...(fields.cadence ? { cadence: fields.cadence } : {}), ...(fields.assignedTo !== undefined ? { assigned_to: fields.assignedTo } : {}) } : t)));
+    startTransition(async () => {
+      const result = await updateServiceTask(taskId, fields);
+      if ((result as { error?: string })?.error) setTasks(reverted);
+    });
+  }
+
+  function removeTask(taskId: number) {
+    const reverted = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    startTransition(async () => {
+      const result = await deleteServiceTask(taskId);
+      if ((result as { error?: string })?.error) setTasks(reverted);
+    });
+  }
+
+  function bulkAddTask(title: string, cadence: string) {
+    startTransition(async () => {
+      const result = await bulkAddServiceTaskToAllClients(title, cadence);
+      const newTasks = (result as { tasks?: ServiceTaskInput[] })?.tasks;
+      if (newTasks) setTasks((prev) => [...prev, ...newTasks]);
     });
   }
 
@@ -200,13 +261,21 @@ export function AtlHub({
             <LoaLinks items={loaLinks} isAdmin={isAdmin} />
             <div>
               <h2 className="mb-3 text-sm font-bold text-ink">Service level</h2>
-              <ServiceLevelBoard
-                items={serviceLevel.items}
-                completionPct={serviceLevel.completionPct}
-                totalDone={serviceLevel.totalDone}
-                totalActive={serviceLevel.totalActive}
-                onTick={(item) => setNoteModalItem(item)}
-                onUntick={(item) => untickServiceLevel(item.clientId, item.kind)}
+              <ServiceTaskBoard
+                items={serviceTaskData.items}
+                completionPct={serviceTaskData.completionPct}
+                totalDone={serviceTaskData.totalDone}
+                totalActive={serviceTaskData.totalActive}
+                clients={clients}
+                assigneesByClient={assigneesByClient}
+                peopleById={peopleByIdMap}
+                isAdmin={isAdmin}
+                onTick={(item) => setCompleteModalItem(item)}
+                onUntick={(item) => untickTask(item.taskId)}
+                onAddTask={addTask}
+                onEditTask={editTask}
+                onRemoveTask={removeTask}
+                onBulkAddTask={bulkAddTask}
               />
             </div>
             <div>
@@ -287,14 +356,16 @@ export function AtlHub({
         )}
       </div>
 
-      {noteModalItem && (
-        <ServiceLevelNoteModal
-          item={noteModalItem}
-          onSubmit={(note) => {
-            logServiceLevel(noteModalItem.clientId, noteModalItem.kind, note);
-            setNoteModalItem(null);
+      {completeModalItem && (
+        <ServiceTaskCompleteModal
+          item={completeModalItem}
+          people={assigneesByClient[completeModalItem.clientId]?.length ? assigneesByClient[completeModalItem.clientId] : people}
+          currentUserId={currentUserId}
+          onSubmit={(completedBy, note) => {
+            completeTask(completeModalItem.taskId, completedBy, note);
+            setCompleteModalItem(null);
           }}
-          onClose={() => setNoteModalItem(null)}
+          onClose={() => setCompleteModalItem(null)}
         />
       )}
     </div>
@@ -389,24 +460,46 @@ function ChecklistBoard({
   );
 }
 
-function ServiceLevelBoard({
+function ServiceTaskBoard({
   items,
   completionPct,
   totalDone,
   totalActive,
+  clients,
+  assigneesByClient,
+  peopleById,
+  isAdmin,
   onTick,
   onUntick,
+  onAddTask,
+  onEditTask,
+  onRemoveTask,
+  onBulkAddTask,
 }: {
-  items: ServiceLevelItem[];
+  items: ServiceTaskItem[];
   completionPct: number;
   totalDone: number;
   totalActive: number;
-  onTick: (item: ServiceLevelItem) => void;
-  onUntick: (item: ServiceLevelItem) => void;
+  clients: ClientRow[];
+  assigneesByClient: Record<number, PersonRow[]>;
+  peopleById: Map<string, string>;
+  isAdmin: boolean;
+  onTick: (item: ServiceTaskItem) => void;
+  onUntick: (item: ServiceTaskItem) => void;
+  onAddTask: (clientId: number, title: string, cadence: string, assignedTo: string | null) => void;
+  onEditTask: (taskId: number, fields: { cadence?: string; assignedTo?: string | null }) => void;
+  onRemoveTask: (taskId: number) => void;
+  onBulkAddTask: (title: string, cadence: string) => void;
 }) {
-  if (items.length === 0) {
+  const [addingForClient, setAddingForClient] = useState<number | null>(null);
+  const [bulkAdding, setBulkAdding] = useState(false);
+
+  if (clients.length === 0) {
     return <EmptyState icon={BarChart3} title="No ATL clients yet" />;
   }
+
+  const groups = groupServiceTasksByClient(items);
+  const groupsByClientId = new Map(groups.map((g) => [g.clientId, g]));
 
   return (
     <div className="space-y-4">
@@ -418,96 +511,303 @@ function ServiceLevelBoard({
         <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-black/5">
           <div className="h-full rounded-full bg-gold" style={{ width: `${completionPct}%` }} />
         </div>
-        <div className="mt-1 text-xs text-charcoal">
-          {totalDone} of {totalActive} updated this period — client call monthly, face to face and proactive opportunity quarterly
-        </div>
+        <div className="mt-1 text-xs text-charcoal">{totalDone} of {totalActive} tasks up to date this period</div>
       </Card>
 
-      <div className="flex flex-col gap-1.5">
-        {groupServiceLevelByClient(items).map((group) => (
-          <div
-            key={group.clientId}
-            className={`flex flex-wrap items-center gap-2 rounded-xl border p-1.5 transition-colors ${
-              group.allDone ? "border-emerald-300 bg-emerald-50" : "border-border-c bg-white"
-            }`}
-          >
-            <div className="flex min-w-[180px] flex-none items-center gap-2 rounded-lg bg-ink px-2.5 py-1.5 text-white">
-              <span className="h-2 w-2 flex-none rounded-full" style={{ background: group.clientColour || "#FDB600" }} />
-              <div className="text-sm font-bold">{group.clientName}</div>
-            </div>
-            <div className="flex min-w-[220px] flex-1 flex-wrap items-center gap-1.5">
-              {group.items.map((item) => (
-                <button
-                  key={item.kind}
-                  type="button"
-                  onClick={() => (item.done ? onUntick(item) : onTick(item))}
-                  title={
-                    item.done
-                      ? item.lastNote
-                        ? item.lastNote
-                        : "Click to undo this period's tick"
-                      : `Mark done for this period (${cadenceLabel(item.cadence)})`
-                  }
-                  className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
-                    item.done
-                      ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:border-emerald-400"
-                      : "border-border-c bg-white text-ink hover:border-gold/50"
-                  }`}
-                >
-                  <span
-                    className={`flex h-3.5 w-3.5 flex-none items-center justify-center rounded border ${
-                      item.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border-c bg-white"
-                    }`}
+      {isAdmin && (
+        <div>
+          {bulkAdding ? (
+            <AddServiceTaskForm
+              people={[]}
+              hideAssignee
+              onSubmit={(title, cadence) => {
+                onBulkAddTask(title, cadence);
+                setBulkAdding(false);
+              }}
+              onCancel={() => setBulkAdding(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setBulkAdding(true)}
+              className="flex items-center gap-1 rounded-full border border-border-c px-3 py-1.5 text-xs font-semibold text-charcoal hover:border-gold hover:text-ink"
+            >
+              <Plus size={12} /> Add task to every ATL client
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3">
+        {clients.map((client) => {
+          const group = groupsByClientId.get(client.id);
+          const clientPeople = assigneesByClient[client.id] ?? [];
+          return (
+            <Card key={client.id} className="p-0">
+              <div className="flex items-center justify-between gap-2 rounded-t-xl bg-ink px-3 py-2 text-white">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 flex-none rounded-full" style={{ background: client.colour || "#FDB600" }} />
+                  <div className="text-sm font-bold">{client.name}</div>
+                </div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setAddingForClient(addingForClient === client.id ? null : client.id)}
+                    className="flex items-center gap-1 rounded-full border border-white/30 px-2 py-0.5 text-[11px] font-semibold text-white hover:border-gold"
                   >
-                    {item.done && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
-                  </span>
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+                    <Plus size={12} /> Task
+                  </button>
+                )}
+              </div>
+
+              {addingForClient === client.id && (
+                <AddServiceTaskForm
+                  people={clientPeople}
+                  onSubmit={(title, cadence, assignedTo) => {
+                    onAddTask(client.id, title, cadence, assignedTo);
+                    setAddingForClient(null);
+                  }}
+                  onCancel={() => setAddingForClient(null)}
+                />
+              )}
+
+              {!group || group.items.length === 0 ? (
+                <div className="p-3 text-xs text-charcoal">No tasks set up for this client yet.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border-c text-left uppercase text-charcoal">
+                        <th className="px-3 py-2">Task</th>
+                        <th className="px-3 py-2">Assigned to</th>
+                        <th className="px-3 py-2">Cadence</th>
+                        <th className="px-3 py-2">Complete</th>
+                        <th className="px-3 py-2">Last completed</th>
+                        <th className="px-3 py-2">Completed by</th>
+                        <th className="px-3 py-2">Next due</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Notes</th>
+                        {isAdmin && <th className="px-3 py-2" />}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map((item) => {
+                        const statusMeta = SERVICE_TASK_STATUS_META[item.status];
+                        return (
+                          <tr key={item.taskId} className="border-b border-border-c align-top last:border-0">
+                            <td className="px-3 py-2 font-medium text-ink">{item.title}</td>
+                            <td className="px-3 py-2">
+                              {isAdmin ? (
+                                <Select
+                                  value={item.assignedTo ?? ""}
+                                  onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                                    onEditTask(item.taskId, { assignedTo: e.target.value || null })
+                                  }
+                                  className="!py-1 text-xs"
+                                >
+                                  <option value="">Unassigned</option>
+                                  {clientPeople.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name}
+                                    </option>
+                                  ))}
+                                </Select>
+                              ) : (
+                                <span className="text-charcoal">
+                                  {(item.assignedTo && peopleById.get(item.assignedTo)) || "Unassigned"}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              {isAdmin ? (
+                                <Select
+                                  value={item.cadence}
+                                  onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                                    onEditTask(item.taskId, { cadence: e.target.value })
+                                  }
+                                  className="!py-1 text-xs"
+                                >
+                                  {CADENCE_OPTIONS.filter((c) => c.value !== "none").map((c) => (
+                                    <option key={c.value} value={c.value}>
+                                      {c.label}
+                                    </option>
+                                  ))}
+                                </Select>
+                              ) : (
+                                <span className="text-charcoal">{cadenceLabel(item.cadence)}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => (item.done ? onUntick(item) : onTick(item))}
+                                title={
+                                  item.done
+                                    ? item.lastNote || "Click to undo this period's tick"
+                                    : "Mark done for this period"
+                                }
+                                className={`flex h-5 w-5 items-center justify-center rounded border ${
+                                  item.done
+                                    ? "border-emerald-500 bg-emerald-500 text-white"
+                                    : "border-border-c bg-white hover:border-gold"
+                                }`}
+                              >
+                                {item.done && <Check className="h-3 w-3" strokeWidth={3} />}
+                              </button>
+                            </td>
+                            <td className="px-3 py-2 text-charcoal">
+                              {item.lastCompletedAt ? new Date(item.lastCompletedAt).toLocaleDateString("en-AU") : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-charcoal">
+                              {(item.lastCompletedBy && peopleById.get(item.lastCompletedBy)) || "—"}
+                            </td>
+                            <td className="px-3 py-2 text-charcoal">
+                              {item.nextDue ? item.nextDue.toLocaleDateString("en-AU") : "—"}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusMeta.className}`}>
+                                {statusMeta.label}
+                              </span>
+                            </td>
+                            <td className="max-w-[200px] whitespace-normal px-3 py-2 text-charcoal">
+                              {item.lastNote ?? "—"}
+                            </td>
+                            {isAdmin && (
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  onClick={() => onRemoveTask(item.taskId)}
+                                  aria-label="Delete task"
+                                  className="text-charcoal hover:text-red-600"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function ServiceLevelNoteModal({
+function AddServiceTaskForm({
+  people,
+  hideAssignee,
+  onSubmit,
+  onCancel,
+}: {
+  people: PersonRow[];
+  hideAssignee?: boolean;
+  onSubmit: (title: string, cadence: string, assignedTo: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [cadence, setCadence] = useState("monthly");
+  const [assignedTo, setAssignedTo] = useState("");
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-border-c bg-black/5 p-3">
+      <Input
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Task title (e.g. Client phone call)"
+        className="min-w-[180px] flex-1 !py-1 text-xs"
+      />
+      <Select value={cadence} onChange={(e) => setCadence(e.target.value)} className="!py-1 text-xs">
+        {CADENCE_OPTIONS.filter((c) => c.value !== "none").map((c) => (
+          <option key={c.value} value={c.value}>
+            {c.label}
+          </option>
+        ))}
+      </Select>
+      {!hideAssignee && (
+        <Select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="!py-1 text-xs">
+          <option value="">Unassigned</option>
+          {people.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </Select>
+      )}
+      <Button
+        type="button"
+        onClick={() => {
+          if (!title.trim()) return;
+          onSubmit(title, cadence, assignedTo || null);
+        }}
+      >
+        Add
+      </Button>
+      <Button type="button" variant="ghost" onClick={onCancel}>
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
+function ServiceTaskCompleteModal({
   item,
+  people,
+  currentUserId,
   onSubmit,
   onClose,
 }: {
-  item: ServiceLevelItem;
-  onSubmit: (note: string) => void;
+  item: ServiceTaskItem;
+  people: PersonRow[];
+  currentUserId: string;
+  onSubmit: (completedBy: string, note: string) => void;
   onClose: () => void;
 }) {
+  const [completedBy, setCompletedBy] = useState(
+    people.some((p) => p.id === currentUserId) ? currentUserId : people[0]?.id ?? "",
+  );
   const [note, setNote] = useState("");
-  const placeholder = SERVICE_LEVEL_KINDS.find((k) => k.key === item.kind)?.notePlaceholder ?? "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-5" onClick={onClose}>
       <div className="w-full max-w-md rounded-xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-start justify-between">
           <div>
-            <h2 className="text-base font-bold text-ink">{item.label}</h2>
+            <h2 className="text-base font-bold text-ink">{item.title}</h2>
             <p className="text-xs text-charcoal">{item.clientName}</p>
           </div>
           <button onClick={onClose} aria-label="Close" className="text-charcoal hover:text-ink">
             <X className="h-4 w-4" strokeWidth={2} />
           </button>
         </div>
+        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-charcoal">
+          Completed by
+        </label>
+        <Select value={completedBy} onChange={(e) => setCompletedBy(e.target.value)} className="mb-3 w-full">
+          {people.length === 0 && <option value="">No one assigned</option>}
+          {people.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </Select>
         <Textarea
           autoFocus
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder={placeholder}
+          placeholder="Notes (optional)"
           className="mb-4"
         />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" onClick={() => onSubmit(note)}>
+          <Button type="button" disabled={!completedBy} onClick={() => onSubmit(completedBy, note)}>
             Log it
           </Button>
         </div>

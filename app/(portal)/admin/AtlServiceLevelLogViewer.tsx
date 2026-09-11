@@ -1,24 +1,19 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { restoreServiceLevelLog, voidServiceLevelLog } from "../atl/actions";
+import { restoreServiceTaskLog, voidServiceTaskLog } from "../atl/actions";
 import { Card, EmptyState, Input } from "@/components/ui";
-import { SERVICE_LEVEL_KINDS } from "@/lib/atl";
 
 export type ServiceLevelLogRow = {
   id: number;
   clientName: string;
-  kind: string;
+  taskTitle: string;
   note: string | null;
   completedByName: string;
   completedAt: string;
   voidedAt: string | null;
   voidedByName: string | null;
 };
-
-function kindLabel(kind: string): string {
-  return SERVICE_LEVEL_KINDS.find((k) => k.key === kind)?.label ?? kind;
-}
 
 export function AtlServiceLevelLogViewer({ logs }: { logs: ServiceLevelLogRow[] }) {
   const [rows, setRows] = useState(logs);
@@ -37,8 +32,8 @@ export function AtlServiceLevelLogViewer({ logs }: { logs: ServiceLevelLogRow[] 
       prev.map((r) => (r.id === row.id ? { ...r, voidedAt: isVoided ? null : new Date().toISOString() } : r)),
     );
     startTransition(async () => {
-      if (isVoided) await restoreServiceLevelLog(row.id);
-      else await voidServiceLevelLog(row.id);
+      if (isVoided) await restoreServiceTaskLog(row.id);
+      else await voidServiceTaskLog(row.id);
     });
   }
 
@@ -46,7 +41,7 @@ export function AtlServiceLevelLogViewer({ logs }: { logs: ServiceLevelLogRow[] 
     return (
       <EmptyState
         title="No service level ticks logged yet"
-        description="Every call, face to face, and proactive-opportunity tick from the ATL checklist will show up here."
+        description="Every ATL task ticked off from the Checklist tab will show up here."
       />
     );
   }
@@ -64,7 +59,7 @@ export function AtlServiceLevelLogViewer({ logs }: { logs: ServiceLevelLogRow[] 
           <thead>
             <tr className="border-b border-border-c text-left text-xs uppercase text-charcoal">
               <th className="px-4 py-3">Client</th>
-              <th className="px-4 py-3">Type</th>
+              <th className="px-4 py-3">Task</th>
               <th className="px-4 py-3">Note</th>
               <th className="px-4 py-3">Logged by</th>
               <th className="px-4 py-3">Logged at</th>
@@ -76,7 +71,7 @@ export function AtlServiceLevelLogViewer({ logs }: { logs: ServiceLevelLogRow[] 
             {filtered.map((row) => (
               <tr key={row.id} className="border-b border-border-c last:border-0 align-top">
                 <td className="px-4 py-2.5 font-medium text-ink">{row.clientName}</td>
-                <td className="px-4 py-2.5 text-charcoal">{kindLabel(row.kind)}</td>
+                <td className="px-4 py-2.5 text-charcoal">{row.taskTitle}</td>
                 <td className="max-w-xs whitespace-normal px-4 py-2.5 text-charcoal">{row.note ?? "—"}</td>
                 <td className="px-4 py-2.5 text-charcoal">{row.completedByName}</td>
                 <td className="px-4 py-2.5 text-charcoal">{new Date(row.completedAt).toLocaleString("en-AU")}</td>

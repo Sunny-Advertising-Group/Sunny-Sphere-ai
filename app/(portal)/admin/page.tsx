@@ -132,7 +132,7 @@ export default async function AdminPage({
     supabase
       .from("atl_service_level_logs")
       .select(
-        "id, kind, note, completed_at, voided_at, completed_by:profiles!atl_service_level_logs_completed_by_fkey(full_name, email), voided_by:profiles!atl_service_level_logs_voided_by_fkey(full_name, email), client:clients(name)",
+        "id, note, completed_at, voided_at, completed_by:profiles!atl_service_level_logs_completed_by_fkey(full_name, email), voided_by:profiles!atl_service_level_logs_voided_by_fkey(full_name, email), task:atl_service_level_tasks(title, client:clients(name))",
       )
       .order("completed_at", { ascending: false })
       .limit(200),
@@ -200,13 +200,13 @@ export default async function AdminPage({
     });
 
   const serviceLevelLogs: ServiceLevelLogRow[] = (rawServiceLevelLogs ?? []).map((l) => {
-    const client = l.client as unknown as { name: string } | null;
+    const task = l.task as unknown as { title: string; client: { name: string } | null } | null;
     const completedBy = l.completed_by as unknown as { full_name: string | null; email: string } | null;
     const voidedBy = l.voided_by as unknown as { full_name: string | null; email: string } | null;
     return {
       id: l.id,
-      clientName: client?.name ?? "Unknown",
-      kind: l.kind,
+      clientName: task?.client?.name ?? "Unknown",
+      taskTitle: task?.title ?? "Unknown",
       note: l.note,
       completedByName: completedBy?.full_name || completedBy?.email || "Unknown",
       completedAt: l.completed_at,
