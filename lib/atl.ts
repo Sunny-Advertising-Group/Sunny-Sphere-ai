@@ -253,105 +253,98 @@ export function groupChecklistByClient(cards: ChecklistCard[]): ChecklistClientG
   return groups.sort((a, b) => a.clientName.localeCompare(b.clientName));
 }
 
-// --- Service level tab: three fixed obligations per ATL client, each on its
-// own fixed cadence (not user-configurable like the link checklist above),
-// with a short note captured on every tick — why you called, what the
-// proactive was, when the next face-to-face is booked, etc. ---
+// --- Service level tab: a fully configurable list of tasks per ATL client
+// (report sent, POPs sent, WAG checks, client phone call, etc — whatever the
+// team actually tracks for that client), each with its own cadence and an
+// assignee, replacing the old fixed 3-obligation model. ---
 
-export type ServiceLevelKind = "call" | "face_to_face" | "proactive";
-
-export const SERVICE_LEVEL_KINDS: {
-  key: ServiceLevelKind;
-  label: string;
-  cadence: string;
-  notePlaceholder: string;
-}[] = [
-  { key: "call", label: "Client call", cadence: "monthly", notePlaceholder: "What did you cover on the call?" },
-  {
-    key: "face_to_face",
-    label: "Face to face meeting",
-    cadence: "quarterly",
-    notePlaceholder: "How did it go, and/or when's the next one booked in?",
-  },
-  {
-    key: "proactive",
-    label: "Proactive opportunity",
-    cadence: "quarterly",
-    notePlaceholder: "What was the opportunity you presented?",
-  },
-];
-
-export function serviceLevelCadence(kind: string): string {
-  return SERVICE_LEVEL_KINDS.find((k) => k.key === kind)?.cadence ?? "monthly";
-}
-
-export type ServiceLevelClientInput = { id: number; name: string; colour: string | null };
-export type ServiceLevelLogInput = {
+export type ServiceTaskInput = {
+  id: number;
   client_id: number;
-  kind: string;
+  title: string;
+  cadence: string;
+  assigned_to: string | null;
+  sort_order: number;
+};
+
+export type ServiceTaskLogInput = {
+  task_id: number;
+  completed_by: string | null;
   completed_at: string;
   voided_at: string | null;
   note: string | null;
 };
 
-export type ServiceLevelItem = {
+export type ServiceTaskItem = {
+  taskId: number;
   clientId: number;
   clientName: string;
   clientColour: string | null;
-  kind: ServiceLevelKind;
-  label: string;
+  title: string;
   cadence: string;
+  assignedTo: string | null;
   done: boolean;
-  lastLoggedAt: string | null;
+  lastCompletedAt: string | null;
+  lastCompletedBy: string | null;
   lastNote: string | null;
+  nextDue: Date | null;
+  status: HousekeepingStatus;
 };
 
-export type ServiceLevelData = {
-  items: ServiceLevelItem[];
+export type ServiceTaskData = {
+  items: ServiceTaskItem[];
   completionPct: number;
   totalDone: number;
   totalActive: number;
 };
 
-export function buildServiceLevelData(
-  clients: ServiceLevelClientInput[],
-  logs: ServiceLevelLogInput[],
+export type ServiceTaskClientInput = { id: number; name: string; colour: string | null };
+
+export function buildServiceTaskData(
+  clients: ServiceTaskClientInput[],
+  tasks: ServiceTaskInput[],
+  logs: ServiceTaskLogInput[],
   now: Date = new Date(),
-): ServiceLevelData {
-  const logsByClientKind = new Map<string, ServiceLevelLogInput[]>();
+): ServiceTaskData {
+  const clientById = new Map(clients.map((c) => [c.id, c]));
+  const logsByTask = new Map<number, ServiceTaskLogInput[]>();
   for (const log of logs) {
-    const key = `${log.client_id}:${log.kind}`;
-    const arr = logsByClientKind.get(key) ?? [];
+    const arr = logsByTask.get(log.task_id) ?? [];
     arr.push(log);
-    logsByClientKind.set(key, arr);
+    logsByTask.set(log.task_id, arr);
   }
 
   let totalDone = 0;
-  const items: ServiceLevelItem[] = [];
-  for (const client of clients) {
-    for (const skind of SERVICE_LEVEL_KINDS) {
-      const clientLogs = logsByClientKind.get(`${client.id}:${skind.key}`) ?? [];
-      const done = isLoggedForCurrentPeriod(skind.cadence, clientLogs, now);
-      if (done) totalDone += 1;
+  const items: ServiceTaskItem[] = [];
+  for (const task of tasks) {
+    const client = clientById.get(task.client_id);
+    if (!client) continue;
 
-      const validLogs = clientLogs.filter((l) => !l.voided_at);
-      const last = validLogs.reduce<ServiceLevelLogInput | null>(
-        (latest, log) => (!latest || log.completed_at > latest.completed_at ? log : latest),
-        null,
-      );
+    const taskLogs = logsByTask.get(task.id) ?? [];
+    const done = isLoggedForCurrentPeriod(task.cadence, taskLogs, now);
+    if (done) totalDone += 1;
 
-      items.push({
-        clientId: client.id,
-        clientName: client.name,
-        clientColour: client.colour,
-        kind: skind.key,
-        label: skind.label,
-        cadence: skind.cadence,
-        done,
-        lastLoggedAt: last?.completed_at ?? null,
-        lastNote: last?.note ?? null,
-      });
-    }
+    const validLogs = taskLogs.filter((l) => !l.voided_at);
+    const last = validLogs.reduce<ServiceTaskLogInput | null>(
+      (latest, log) => (!latest || log.completed_at > latest.completed_at ? log : latest),
+      null,
+    );
+
+    items.push({
+      taskId: task.id,
+      clientId: client.id,
+      clientName: client.name,
+      clientColour: client.colour,
+      title: task.title,
+      cadence: task.cadence,
+      assignedTo: task.assigned_to,
+      done,
+      lastCompletedAt: last?.completed_at ?? null,
+      lastCompletedBy: last?.completed_by ?? null,
+      lastNote: last?.note ?? null,
+      nextDue: nextDueDate(task.cadence, last?.completed_at ?? null),
+      status: housekeepingStatus(task.cadence, last?.completed_at ?? null),
+    });
   }
 
   return {
@@ -362,16 +355,16 @@ export function buildServiceLevelData(
   };
 }
 
-export type ServiceLevelClientGroup = {
+export type ServiceTaskClientGroup = {
   clientId: number;
   clientName: string;
   clientColour: string | null;
-  items: ServiceLevelItem[];
+  items: ServiceTaskItem[];
   allDone: boolean;
 };
 
-export function groupServiceLevelByClient(items: ServiceLevelItem[]): ServiceLevelClientGroup[] {
-  const map = new Map<number, ServiceLevelClientGroup>();
+export function groupServiceTasksByClient(items: ServiceTaskItem[]): ServiceTaskClientGroup[] {
+  const map = new Map<number, ServiceTaskClientGroup>();
   for (const item of items) {
     const group = map.get(item.clientId) ?? {
       clientId: item.clientId,
@@ -385,6 +378,16 @@ export function groupServiceLevelByClient(items: ServiceLevelItem[]): ServiceLev
   }
 
   const groups = Array.from(map.values());
-  for (const group of groups) group.allDone = group.items.every((item) => item.done);
+  for (const group of groups) {
+    group.allDone = group.items.every((item) => item.done);
+    group.items.sort((a, b) => a.title.localeCompare(b.title));
+  }
   return groups.sort((a, b) => a.clientName.localeCompare(b.clientName));
 }
+
+// A task that's never been ticked shows as "not yet done" rather than the
+// link-tracker's "awaiting sync" (that label is specific to Drive syncing).
+export const SERVICE_TASK_STATUS_META: Record<HousekeepingStatus, { label: string; className: string }> = {
+  ...HOUSEKEEPING_STATUS_META,
+  awaiting_sync: { label: "Not yet done", className: "text-charcoal bg-black/5" },
+};
