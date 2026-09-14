@@ -2,9 +2,9 @@
 
 import { Fragment, useState, useTransition } from "react";
 import {
+  generatePasswordResetLink,
   grantSection,
   removeMember,
-  resendInviteLink,
   revokeSection,
   updateRole,
   updateTeam,
@@ -37,9 +37,9 @@ export function PeopleTable({ people, currentUserId }: { people: Person[]; curre
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
-  const [resendPending, setResendPending] = useState<string | null>(null);
-  const [resendLinks, setResendLinks] = useState<Record<string, string>>({});
-  const [resendErrors, setResendErrors] = useState<Record<string, string>>({});
+  const [linkPending, setLinkPending] = useState<string | null>(null);
+  const [links, setLinks] = useState<Record<string, string>>({});
+  const [linkErrors, setLinkErrors] = useState<Record<string, string>>({});
 
   function changeRole(id: string, role: "team" | "admin") {
     setRows((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
@@ -109,17 +109,17 @@ export function PeopleTable({ people, currentUserId }: { people: Person[]; curre
     });
   }
 
-  function resend(id: string) {
-    setResendPending(id);
-    setResendErrors((prev) => ({ ...prev, [id]: "" }));
+  function getLink(id: string) {
+    setLinkPending(id);
+    setLinkErrors((prev) => ({ ...prev, [id]: "" }));
     startTransition(async () => {
-      const result = await resendInviteLink(id);
-      setResendPending(null);
+      const result = await generatePasswordResetLink(id);
+      setLinkPending(null);
       if (result?.error) {
-        setResendErrors((prev) => ({ ...prev, [id]: result.error! }));
+        setLinkErrors((prev) => ({ ...prev, [id]: result.error! }));
         return;
       }
-      setResendLinks((prev) => ({ ...prev, [id]: result.inviteLink ?? "" }));
+      setLinks((prev) => ({ ...prev, [id]: result.inviteLink ?? "" }));
     });
   }
 
@@ -186,48 +186,52 @@ export function PeopleTable({ people, currentUserId }: { people: Person[]; curre
                   </td>
                 ))}
                 <td className="px-4 py-3">
-                  {p.lastSignInAt ? (
-                    <span className="text-xs text-charcoal">
-                      Last on site{" "}
-                      {new Date(p.lastSeenAt ?? p.lastSignInAt).toISOString().slice(0, 10)}
-                    </span>
-                  ) : (
-                    <div className="space-y-1">
+                  <div className="space-y-1">
+                    {p.lastSignInAt ? (
+                      <span className="text-xs text-charcoal">
+                        Last on site{" "}
+                        {new Date(p.lastSeenAt ?? p.lastSignInAt).toISOString().slice(0, 10)}
+                      </span>
+                    ) : (
                       <span className="text-xs font-medium text-amber-700">Not logged in yet</span>
-                      <div>
+                    )}
+                    <div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => getLink(p.id)}
+                        disabled={linkPending === p.id}
+                        className="px-2 py-1 text-xs"
+                      >
+                        {linkPending === p.id
+                          ? "Generating…"
+                          : p.lastSignInAt
+                            ? "Reset password link"
+                            : "Resend invite link"}
+                      </Button>
+                    </div>
+                    {linkErrors[p.id] && (
+                      <p className="text-xs font-medium text-red-600">{linkErrors[p.id]}</p>
+                    )}
+                    {links[p.id] && (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          readOnly
+                          value={links[p.id]}
+                          className="w-40 text-[10px]"
+                          onFocus={(e) => e.target.select()}
+                        />
                         <Button
                           type="button"
                           variant="ghost"
-                          onClick={() => resend(p.id)}
-                          disabled={resendPending === p.id}
+                          onClick={() => navigator.clipboard.writeText(links[p.id])}
                           className="px-2 py-1 text-xs"
                         >
-                          {resendPending === p.id ? "Generating…" : "Resend link"}
+                          Copy
                         </Button>
                       </div>
-                      {resendErrors[p.id] && (
-                        <p className="text-xs font-medium text-red-600">{resendErrors[p.id]}</p>
-                      )}
-                      {resendLinks[p.id] && (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            readOnly
-                            value={resendLinks[p.id]}
-                            className="w-40 text-[10px]"
-                            onFocus={(e) => e.target.select()}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => navigator.clipboard.writeText(resendLinks[p.id])}
-                            className="px-2 py-1 text-xs"
-                          >
-                            Copy
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   {p.id === currentUserId ? (
