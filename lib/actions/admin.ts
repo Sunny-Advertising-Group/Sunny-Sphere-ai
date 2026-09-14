@@ -54,7 +54,12 @@ export async function inviteMember(_prevState: unknown, formData: FormData) {
   return { success: `Invite link ready for ${email}.`, inviteLink: data.properties?.action_link };
 }
 
-export async function resendInviteLink(userId: string) {
+// Doubles as "resend invite" (someone hasn't accepted their first invite yet)
+// and "reset password" (an active user is locked out / wants to change it) —
+// both are the same GoTrue "recovery" link under the hood, since the
+// person's auth.users row already exists either way ("invite" is only for
+// brand-new users).
+export async function generatePasswordResetLink(userId: string) {
   const { isAdmin } = await requireAdmin();
   if (!isAdmin) return { error: "Not authorized." };
 
@@ -65,8 +70,6 @@ export async function resendInviteLink(userId: string) {
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
-  // "recovery" (not "invite") because the user's auth.users row already exists from the
-  // first invite — GoTrue's invite type is only for brand-new users.
   const { data, error } = await admin.auth.admin.generateLink({
     type: "recovery",
     email: userData.user.email,
