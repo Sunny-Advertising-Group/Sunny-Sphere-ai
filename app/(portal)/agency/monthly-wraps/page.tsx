@@ -5,13 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { MonthlyWrapsGrid } from "./MonthlyWrapsGrid";
 
-const WRAPS_OWNER_EMAIL = "lily@sunnyadvertising.com.au";
-
 export default async function MonthlyWrapsPage() {
   const visibility = await getVisibility();
   if (!visibility) redirect("/login");
 
-  const canUpload = visibility.profile.email === WRAPS_OWNER_EMAIL;
+  const canUpload = visibility.isAdmin;
 
   const supabase = await createClient();
   const { data: wraps } = await supabase
