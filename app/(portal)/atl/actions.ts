@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { periodStart } from "@/lib/digitalOpti";
 import { AUDIO_STAGES } from "@/lib/audio";
+import { createReminderEvent } from "@/lib/googleCalendar";
 
 // `clients` is the single shared roster for both ATL and Digital — a client
 // can be on either, both, or neither (on_atl/on_digital), with shared fields
@@ -284,38 +285,6 @@ export async function deleteAtlLink(id: number) {
   return { success: true };
 }
 
-// --- Checklist: ticking an ATL link off for its current cadence period ---
-
-export async function logAtlChecklist(atlLinkId: number) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
-
-  const { data: link } = await supabase.from("atl_links").select("cadence").eq("id", atlLinkId).single();
-  if (!link?.cadence) return { error: "Link not found." };
-
-  const start = periodStart(link.cadence).toISOString();
-  const { data: existing } = await supabase
-    .from("atl_checklist_logs")
-    .select("id")
-    .eq("atl_link_id", atlLinkId)
-    .is("voided_at", null)
-    .gte("completed_at", start)
-    .limit(1);
-  if (existing && existing.length > 0) return { success: true };
-
-  const { error } = await supabase.from("atl_checklist_logs").insert({
-    atl_link_id: atlLinkId,
-    completed_by: user.id,
-  });
-  if (error) return { error: error.message };
-
-  revalidatePath("/atl");
-  return { success: true };
-}
-
 // --- Audio production tracker (Lincoln Place and any other ATL client that
 // runs radio/audio spots split by estate) ---
 
@@ -408,29 +377,6 @@ export async function deleteAudioItem(id: number) {
 
   revalidatePath("/atl");
   revalidatePath("/atl/[client]", "page");
-  return { success: true };
-}
-
-export async function unlogAtlChecklist(atlLinkId: number) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
-
-  const { data: link } = await supabase.from("atl_links").select("cadence").eq("id", atlLinkId).single();
-  if (!link?.cadence) return { error: "Link not found." };
-
-  const start = periodStart(link.cadence).toISOString();
-  const { error } = await supabase
-    .from("atl_checklist_logs")
-    .update({ voided_at: new Date().toISOString(), voided_by: user.id })
-    .eq("atl_link_id", atlLinkId)
-    .is("voided_at", null)
-    .gte("completed_at", start);
-  if (error) return { error: error.message };
-
-  revalidatePath("/atl");
   return { success: true };
 }
 
@@ -571,6 +517,28 @@ export async function unlogServiceTask(taskId: number) {
   if (error) return { error: error.message };
 
   revalidatePath("/atl");
+  return { success: true };
+}
+
+// Adds a one-off Google Calendar reminder (on the current user's own
+// calendar) for a service task's next due date — a manual nudge alongside
+// the automatic tagging sync the Tasks board already does.
+export async function addServiceTaskReminder(title: string, clientName: string, dueDate: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const result = await createReminderEvent(user.id, { title: `${clientName} — ${title}`, date: dueDate });
+  if (!result.ok) {
+    return {
+      error:
+        result.reason === "not_connected"
+          ? "Connect Google Calendar from the Tasks page first."
+          : "Couldn't add the reminder to your calendar.",
+    };
+  }
   return { success: true };
 }
 
