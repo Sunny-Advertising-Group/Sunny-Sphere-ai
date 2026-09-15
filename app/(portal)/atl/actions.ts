@@ -285,38 +285,6 @@ export async function deleteAtlLink(id: number) {
   return { success: true };
 }
 
-// --- Checklist: ticking an ATL link off for its current cadence period ---
-
-export async function logAtlChecklist(atlLinkId: number) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
-
-  const { data: link } = await supabase.from("atl_links").select("cadence").eq("id", atlLinkId).single();
-  if (!link?.cadence) return { error: "Link not found." };
-
-  const start = periodStart(link.cadence).toISOString();
-  const { data: existing } = await supabase
-    .from("atl_checklist_logs")
-    .select("id")
-    .eq("atl_link_id", atlLinkId)
-    .is("voided_at", null)
-    .gte("completed_at", start)
-    .limit(1);
-  if (existing && existing.length > 0) return { success: true };
-
-  const { error } = await supabase.from("atl_checklist_logs").insert({
-    atl_link_id: atlLinkId,
-    completed_by: user.id,
-  });
-  if (error) return { error: error.message };
-
-  revalidatePath("/atl");
-  return { success: true };
-}
-
 // --- Audio production tracker (Lincoln Place and any other ATL client that
 // runs radio/audio spots split by estate) ---
 
@@ -409,29 +377,6 @@ export async function deleteAudioItem(id: number) {
 
   revalidatePath("/atl");
   revalidatePath("/atl/[client]", "page");
-  return { success: true };
-}
-
-export async function unlogAtlChecklist(atlLinkId: number) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
-
-  const { data: link } = await supabase.from("atl_links").select("cadence").eq("id", atlLinkId).single();
-  if (!link?.cadence) return { error: "Link not found." };
-
-  const start = periodStart(link.cadence).toISOString();
-  const { error } = await supabase
-    .from("atl_checklist_logs")
-    .update({ voided_at: new Date().toISOString(), voided_by: user.id })
-    .eq("atl_link_id", atlLinkId)
-    .is("voided_at", null)
-    .gte("completed_at", start);
-  if (error) return { error: error.message };
-
-  revalidatePath("/atl");
   return { success: true };
 }
 
