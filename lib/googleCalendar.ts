@@ -173,6 +173,35 @@ export async function syncTaskCalendarEvent(
   }
 }
 
+// A one-off reminder, not tied to any row this app tracks afterwards (no
+// google_event_id to persist/update/delete later) — for a manual "add to
+// calendar" button rather than the automatic due-date sync above.
+export async function createReminderEvent(
+  profileId: string,
+  reminder: { title: string; description?: string | null; date: string },
+): Promise<{ ok: true } | { ok: false; reason: "not_configured" | "not_connected" | "failed" }> {
+  if (!isGoogleCalendarConfigured()) return { ok: false, reason: "not_configured" };
+
+  const client = await authorizedClientFor(profileId);
+  if (!client) return { ok: false, reason: "not_connected" };
+
+  try {
+    await google.calendar({ version: "v3", auth: client }).events.insert({
+      calendarId: "primary",
+      requestBody: {
+        summary: `📋 ${reminder.title}`,
+        description: reminder.description ?? undefined,
+        start: { date: reminder.date },
+        end: { date: addOneDay(reminder.date) },
+      },
+    });
+    return { ok: true };
+  } catch (err) {
+    console.error("[googleCalendar] one-off reminder failed:", err);
+    return { ok: false, reason: "failed" };
+  }
+}
+
 export async function deleteTaskCalendarEvent(task: CalendarSyncTask): Promise<void> {
   if (!task.google_event_id || !task.google_calendar_owner_id) return;
   try {
