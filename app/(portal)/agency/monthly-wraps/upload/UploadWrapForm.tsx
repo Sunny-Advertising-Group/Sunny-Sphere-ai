@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { uploadMonthlyWrap } from "../../actions";
 import { Button, Input, PageHeader } from "@/components/ui";
@@ -9,8 +9,24 @@ function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
+// Keep in sync with next.config.ts's serverActions.bodySizeLimit — checked
+// here too so an oversized file fails with a clear message instead of the
+// generic browser error a request over that limit gets rejected with.
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
 export function UploadWrapForm() {
   const [state, formAction, pending] = useActionState(uploadMonthlyWrap, undefined);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    const file = new FormData(e.currentTarget).get("file");
+    if (file instanceof File && file.size > MAX_FILE_BYTES) {
+      e.preventDefault();
+      setFileError(`That file is ${(file.size / (1024 * 1024)).toFixed(1)}MB — the limit is 25MB.`);
+      return;
+    }
+    setFileError(null);
+  }
 
   return (
     <div>
@@ -21,7 +37,7 @@ export function UploadWrapForm() {
         backLabel="All wraps"
       />
       <div className="p-8">
-        <form action={formAction} className="max-w-xl space-y-4">
+        <form action={formAction} onSubmit={handleSubmit} className="max-w-xl space-y-4">
           <div>
             <label className="mb-1 block text-xs font-semibold text-charcoal">Month</label>
             <Input name="month" type="month" required defaultValue={currentMonth()} />
@@ -41,7 +57,9 @@ export function UploadWrapForm() {
             />
           </div>
 
-          {state?.error && <p className="text-sm font-medium text-red-600">{state.error}</p>}
+          {(fileError || state?.error) && (
+            <p className="text-sm font-medium text-red-600">{fileError || state?.error}</p>
+          )}
 
           <div className="flex items-center gap-3 pt-2">
             <Button type="submit" disabled={pending}>
