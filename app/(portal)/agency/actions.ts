@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
@@ -15,36 +14,30 @@ async function requireAdmin() {
   return { supabase, user, isAdmin: !!isAdmin };
 }
 
-export async function uploadMonthlyWrap(_prevState: unknown, formData: FormData) {
+// The file itself is uploaded straight from the browser to Supabase Storage
+// (see UploadWrapForm) — routing it through this Server Action instead would
+// hit Vercel's ~4.5MB hard cap on a serverless function's request body,
+// which no next.config.ts setting can raise. This action only ever receives
+// the resulting storage path plus the small text fields, so it's nowhere
+// near that limit.
+export async function finalizeMonthlyWrapUpload(month: string, title: string, filePath: string) {
   const { supabase, user, isAdmin } = await requireAdmin();
   if (!user || !isAdmin) return { error: "Not authorized." };
 
-  const month = String(formData.get("month") ?? "").trim();
-  const title = String(formData.get("title") ?? "").trim();
-  const file = formData.get("file");
-
   if (!/^\d{4}-\d{2}$/.test(month)) return { error: "Choose a month." };
-  if (!(file instanceof File) || file.size === 0) return { error: "Choose an HTML file to upload." };
-  if (!/\.html?$/i.test(file.name)) return { error: "Only .html files are supported." };
+  if (!filePath) return { error: "Missing uploaded file." };
 
   const wrapMonth = `${month}-01`;
-  const path = `${crypto.randomUUID()}/${file.name}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from("monthly_wraps")
-    .upload(path, file, { contentType: "text/html" });
-  if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
-
   const { error } = await supabase
     .from("monthly_wraps")
     .upsert(
-      { wrap_month: wrapMonth, title: title || null, file_path: path, uploaded_by: user.id },
+      { wrap_month: wrapMonth, title: title.trim() || null, file_path: filePath, uploaded_by: user.id },
       { onConflict: "wrap_month" },
     );
   if (error) return { error: error.message };
 
   revalidatePath("/agency/monthly-wraps");
-  redirect("/agency/monthly-wraps");
+  return { success: true };
 }
 
 export async function deleteMonthlyWrap(id: number) {

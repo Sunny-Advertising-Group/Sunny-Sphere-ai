@@ -1,31 +1,62 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { uploadMonthlyWrap } from "../../actions";
+import { createClient } from "@/lib/supabase/client";
+import { finalizeMonthlyWrapUpload } from "../../actions";
 import { Button, Input, PageHeader } from "@/components/ui";
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
-// Keep in sync with next.config.ts's serverActions.bodySizeLimit — checked
-// here too so an oversized file fails with a clear message instead of the
-// generic browser error a request over that limit gets rejected with.
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+// This is a Supabase Storage limit, not Vercel's — the file goes straight
+// from the browser to storage, bypassing the serverless function entirely.
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 export function UploadWrapForm() {
-  const [state, formAction, pending] = useActionState(uploadMonthlyWrap, undefined);
-  const [fileError, setFileError] = useState<string | null>(null);
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    const file = new FormData(e.currentTarget).get("file");
-    if (file instanceof File && file.size > MAX_FILE_BYTES) {
-      e.preventDefault();
-      setFileError(`That file is ${(file.size / (1024 * 1024)).toFixed(1)}MB — the limit is 25MB.`);
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+
+    const formData = new FormData(e.currentTarget);
+    const month = String(formData.get("month") ?? "").trim();
+    const title = String(formData.get("title") ?? "").trim();
+    const file = formData.get("file");
+
+    if (!month) return setError("Choose a month.");
+    if (!(file instanceof File) || file.size === 0) return setError("Choose an HTML file to upload.");
+    if (!/\.html?$/i.test(file.name)) return setError("Only .html files are supported.");
+    if (file.size > MAX_FILE_BYTES) {
+      return setError(`That file is ${(file.size / (1024 * 1024)).toFixed(1)}MB — the limit is 50MB.`);
+    }
+
+    setPending(true);
+    const supabase = createClient();
+    const path = `${crypto.randomUUID()}/${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from("monthly_wraps")
+      .upload(path, file, { contentType: "text/html" });
+    if (uploadError) {
+      setError(`Upload failed: ${uploadError.message}`);
+      setPending(false);
       return;
     }
-    setFileError(null);
+
+    const result = await finalizeMonthlyWrapUpload(month, title, path);
+    if (result?.error) {
+      setError(result.error);
+      setPending(false);
+      return;
+    }
+
+    router.push("/agency/monthly-wraps");
+    router.refresh();
   }
 
   return (
@@ -37,7 +68,7 @@ export function UploadWrapForm() {
         backLabel="All wraps"
       />
       <div className="p-8">
-        <form action={formAction} onSubmit={handleSubmit} className="max-w-xl space-y-4">
+        <form onSubmit={handleSubmit} className="max-w-xl space-y-4">
           <div>
             <label className="mb-1 block text-xs font-semibold text-charcoal">Month</label>
             <Input name="month" type="month" required defaultValue={currentMonth()} />
@@ -57,9 +88,7 @@ export function UploadWrapForm() {
             />
           </div>
 
-          {(fileError || state?.error) && (
-            <p className="text-sm font-medium text-red-600">{fileError || state?.error}</p>
-          )}
+          {error && <p className="text-sm font-medium text-red-600">{error}</p>}
 
           <div className="flex items-center gap-3 pt-2">
             <Button type="submit" disabled={pending}>
