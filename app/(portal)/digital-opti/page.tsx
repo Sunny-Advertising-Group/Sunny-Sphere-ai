@@ -32,13 +32,15 @@ export default async function DigitalOptiPage() {
     { data: tiers },
     { data: scheduleRow },
     { data: clientOwners },
+    { data: myPending },
   ] = await Promise.all([
     supabase
       .from("clients")
       .select(
-        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, tier:client_tiers(id, name, colour, sort_order)",
+        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, parent_client_id, included_in_parent_retainer, tier:client_tiers(id, name, colour, sort_order)",
       )
       .eq("on_digital", true)
+      .eq("approval_status", "approved")
       .neq("digital_status", "archived")
       .order("name"),
     supabase
@@ -53,6 +55,12 @@ export default async function DigitalOptiPage() {
     supabase.from("client_tiers").select("id, name, colour, sort_order").order("sort_order"),
     supabase.from("digital_opti_schedule").select("tier_ids").eq("week_commencing", weekCommencingIso).maybeSingle(),
     supabase.from("digital_client_owners").select("client_id, profile_id, split_pct, profile:profiles(full_name, email)"),
+    supabase
+      .from("clients")
+      .select("id, name, parent_client_id, approval_status")
+      .eq("submitted_by", visibility.profile.id)
+      .in("approval_status", ["pending", "rejected"])
+      .order("id", { ascending: false }),
   ]);
 
   if (clientsError) console.error("[digital-opti] clients query failed:", clientsError);
@@ -80,6 +88,8 @@ export default async function DigitalOptiPage() {
       cadence: client.digital_cadence ?? "weekly",
       tier,
       owners: ownersByClient.get(client.id) ?? [],
+      parentId: client.parent_client_id,
+      includedInParentRetainer: client.included_in_parent_retainer,
     };
   });
 
@@ -99,6 +109,13 @@ export default async function DigitalOptiPage() {
 
   const board = buildDigitalOptiBoardData(clientInputs, channelInputs, logs ?? [], now, scheduledTierIds, activeTierIds);
 
+  // Only an existing top-level client can take on a tactical — nesting a
+  // tactical under another tactical isn't a shape the board renders.
+  const parentClientOptions = clientInputs
+    .filter((c) => c.parentId == null)
+    .map((c) => ({ id: c.id, name: c.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div>
       <PageHeader
@@ -116,6 +133,8 @@ export default async function DigitalOptiPage() {
         isAdmin={visibility.isAdmin}
         tiers={tierOptions}
         myProfileId={visibility.profile.id}
+        parentClientOptions={parentClientOptions}
+        myPending={myPending ?? []}
       />
     </div>
   );

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ExternalLink, Pencil } from "lucide-react";
-import { Button, Card, EmptyState, Input } from "@/components/ui";
+import { CornerDownRight, ExternalLink, Pencil } from "lucide-react";
+import { Button, Card, EmptyState, Input, Pill } from "@/components/ui";
 import {
   channelLabel,
   clientStatusMeta,
@@ -13,8 +13,11 @@ import {
   type TierInfo,
 } from "@/lib/digitalOpti";
 import { logOpti, unlogOpti, updateClientWipUrl, updateScheduleLabel } from "./actions";
+import { AddClientModal, AddTacticalModal } from "./AddClientForms";
 
 export type { ClientCardData, TeamSplitRow };
+
+export type PendingSubmission = { id: number; name: string; parent_client_id: number | null; approval_status: string };
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -62,6 +65,8 @@ export function DigitalOptiBoard({
   isAdmin,
   tiers,
   myProfileId,
+  parentClientOptions,
+  myPending,
 }: {
   clients: ClientCardData[];
   completionPct: number;
@@ -73,10 +78,15 @@ export function DigitalOptiBoard({
   isAdmin: boolean;
   tiers: TierInfo[];
   myProfileId: string;
+  parentClientOptions: { id: number; name: string }[];
+  myPending: PendingSubmission[];
 }) {
   const [clientRows, setClientRows] = useState(clients);
   const [tierFilter, setTierFilter] = useState<number | "all">("all");
   const [myClientsOnly, setMyClientsOnly] = useState(false);
+  const [hidePaused, setHidePaused] = useState(false);
+  const [addingClient, setAddingClient] = useState(false);
+  const [addingTactical, setAddingTactical] = useState(false);
   const [, startTransition] = useTransition();
 
   // Not every client is due every week — a client whose tier isn't in this
@@ -91,7 +101,8 @@ export function DigitalOptiBoard({
     .filter((c) => tierFilter === "all" || c.tier?.id === tierFilter)
     .filter(
       (c) => !myClientsOnly || c.channels.some((ch) => ch.owners.some((o) => o.profileId === myProfileId)),
-    );
+    )
+    .filter((c) => !hidePaused || c.status !== "paused");
 
   function setWipUrl(clientId: number, url: string | null) {
     setClientRows((prev) => prev.map((c) => (c.id !== clientId ? c : { ...c, wipDocUrl: url })));
@@ -188,8 +199,29 @@ export function DigitalOptiBoard({
         )}
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setAddingClient(true)} className="px-3 py-1.5 text-xs">
+            + Add client
+          </Button>
+          <Button variant="ghost" onClick={() => setAddingTactical(true)} className="px-3 py-1.5 text-xs">
+            + Add tactical
+          </Button>
+        </div>
+        {myPending.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">Your submissions:</span>
+            {myPending.map((p) => (
+              <Pill key={p.id} tone={p.approval_status === "rejected" ? "muted" : "gold"}>
+                {p.name} — {p.approval_status === "rejected" ? "Rejected" : "Pending approval"}
+              </Pill>
+            ))}
+          </div>
+        )}
+      </div>
+
       {clientRows.length === 0 ? (
-        <EmptyState title="No Digital clients yet" description="Add a client and their channels from the Admin page." />
+        <EmptyState title="No Digital clients yet" description="Add a client above, or from the Admin page." />
       ) : (
         <>
           <div className="flex flex-wrap gap-2">
@@ -200,6 +232,14 @@ export function DigitalOptiBoard({
               }`}
             >
               My clients
+            </button>
+            <button
+              onClick={() => setHidePaused((v) => !v)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                hidePaused ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
+              }`}
+            >
+              Hide paused
             </button>
             {usedTiers.length > 0 && (
               <>
@@ -238,18 +278,29 @@ export function DigitalOptiBoard({
               <div
                 key={client.id}
                 className={`flex flex-wrap items-stretch gap-1 rounded-xl border p-1 transition-colors ${
-                  client.allDone ? "border-emerald-300 bg-emerald-50" : "border-border-c bg-white"
-                }`}
+                  client.parentId != null ? "ml-6" : ""
+                } ${client.allDone ? "border-emerald-300 bg-emerald-50" : "border-border-c bg-white"}`}
                 style={client.tier ? { borderLeftColor: client.tier.colour, borderLeftWidth: 4 } : undefined}
               >
                 <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-ink px-2.5 py-1 text-white">
-                  <span className="h-2 w-2 flex-none rounded-full" style={{ background: "#FDB600" }} />
+                  {client.parentId != null ? (
+                    <CornerDownRight className="h-3.5 w-3.5 flex-none text-white/60" strokeWidth={2} aria-hidden />
+                  ) : (
+                    <span className="h-2 w-2 flex-none rounded-full" style={{ background: "#FDB600" }} />
+                  )}
                   <span className="text-sm font-bold">{client.name}</span>
                   <div className="ml-auto flex flex-none items-center gap-1.5">
-                    {client.retainer != null && (
-                      <span className="text-[11px] font-semibold text-white/70">
-                        {currency.format(client.retainer)}
+                    {client.parentId != null && client.includedInParentRetainer ? (
+                      <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold text-white/80">
+                        Included in retainer
                       </span>
+                    ) : (
+                      client.retainer != null && (
+                        <span className="text-[11px] font-semibold text-white/70">
+                          {client.parentId != null ? "+" : ""}
+                          {currency.format(client.retainer)}
+                        </span>
+                      )
                     )}
                     {client.tier && (
                       <span
@@ -321,6 +372,11 @@ export function DigitalOptiBoard({
           })}
           </div>
         </>
+      )}
+
+      {addingClient && <AddClientModal tiers={tiers} onClose={() => setAddingClient(false)} />}
+      {addingTactical && (
+        <AddTacticalModal parentClientOptions={parentClientOptions} onClose={() => setAddingTactical(false)} />
       )}
     </div>
   );
