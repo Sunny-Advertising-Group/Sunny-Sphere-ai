@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui";
 import { AtlHub, type LinkRow } from "./AtlHub";
 
 // Covers a full quarterly cadence period plus buffer, same as Digital Opti,
-// so "is this link's checklist ticked for its current period" always has
+// so "is this service task logged for its current period" always has
 // enough log history to check.
 const LOG_LOOKBACK_DAYS = 100;
 
@@ -20,7 +20,6 @@ export default async function AtlPage() {
   const [
     { data: clients },
     { data: rawLinks },
-    { data: checklistLogs },
     { data: serviceTasks },
     { data: serviceTaskLogs },
     { data: loaLinks },
@@ -32,10 +31,6 @@ export default async function AtlPage() {
       .from("atl_links")
       .select("id, client_id, kind, title, url, version_label, cadence, client:clients(name, colour)")
       .order("sort_order"),
-    supabase
-      .from("atl_checklist_logs")
-      .select("atl_link_id, completed_at, voided_at")
-      .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
     supabase
       .from("atl_service_level_tasks")
       .select("id, client_id, title, cadence, assigned_to, sort_order")
@@ -92,7 +87,6 @@ export default async function AtlPage() {
       <AtlHub
         clients={clients ?? []}
         links={links}
-        checklistLogs={checklistLogs ?? []}
         serviceTasks={serviceTasks ?? []}
         serviceTaskLogs={serviceTaskLogs ?? []}
         loaLinks={loaLinks ?? []}
