@@ -187,6 +187,11 @@ export type ClientChannelCard = {
 // and next-largest split in `owners` (see buildDigitalOptiBoardData).
 export type ClientCardData = ClientInput & {
   channels: ClientChannelCard[];
+  // The owners actually credited on this row — this client's own `owners`
+  // if it has any, otherwise (for a tactical only) its parent's, so a
+  // sub-client with no assignment of its own automatically reads as "same
+  // assignment" as its parent rather than "Unassigned".
+  effectiveOwners: ClientOwnerInput[];
   leadName: string | null;
   secondName: string | null;
   // Whether this client's tier is due for optimisation this week per the
@@ -250,6 +255,8 @@ export function buildDigitalOptiBoardData(
     channelsByClient.set(ch.client_id, arr);
   }
 
+  const ownersByClientId = new Map(clients.map((c) => [c.id, c.owners]));
+
   let totalActive = 0;
   let totalDone = 0;
   let lastUpdatedAt: string | null = null;
@@ -277,14 +284,23 @@ export function buildDigitalOptiBoardData(
         return { id: ch.id, channel: ch.channel, done, lastLoggedAt: lastLogged, owners: ch.owners };
       });
 
+    // A tactical with no owners of its own falls back to its parent's — same
+    // assignment, no need to duplicate the split on every sub-client.
+    const effectiveOwners =
+      client.owners.length > 0
+        ? client.owners
+        : client.parentId != null
+          ? (ownersByClientId.get(client.parentId) ?? [])
+          : client.owners;
+
     // Derived lead & second: whoever holds the largest (and next-largest)
     // retainer split on this client (ties keep whichever was seen first).
-    const rankedOwners = client.owners.slice().sort((a, b) => b.splitPct - a.splitPct);
+    const rankedOwners = effectiveOwners.slice().sort((a, b) => b.splitPct - a.splitPct);
     const leadName = rankedOwners[0]?.name ?? null;
     const secondName = rankedOwners[1]?.name ?? null;
     const allDone = chans.length > 0 && chans.every((c) => c.done);
 
-    return { ...client, channels: chans, leadName, secondName, dueThisWeek, allDone };
+    return { ...client, channels: chans, effectiveOwners, leadName, secondName, dueThisWeek, allDone };
   });
 
   // Tiered hierarchy: untiered clients (sortOrder undefined) sort last,
@@ -324,14 +340,14 @@ export function buildDigitalOptiBoardData(
   // of your accounts"), but only their split share of its retainer.
   const teamSplitMap = new Map<string, TeamSplitRow>();
   for (const client of clientCards) {
-    if (client.owners.length === 0) {
+    if (client.effectiveOwners.length === 0) {
       const row = teamSplitMap.get("Unassigned") ?? { lead: "Unassigned", clients: 0, retainer: 0, channels: 0 };
       row.clients += 1;
       row.retainer += client.retainer ?? 0;
       teamSplitMap.set("Unassigned", row);
       continue;
     }
-    for (const owner of client.owners) {
+    for (const owner of client.effectiveOwners) {
       const row = teamSplitMap.get(owner.name) ?? { lead: owner.name, clients: 0, retainer: 0, channels: 0 };
       row.clients += 1;
       row.retainer += (client.retainer ?? 0) * (owner.splitPct / 100);

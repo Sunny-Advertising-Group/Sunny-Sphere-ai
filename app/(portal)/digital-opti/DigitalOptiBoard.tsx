@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { CornerDownRight, ExternalLink, Pencil } from "lucide-react";
+import { ChevronDown, ChevronRight, CornerDownRight, ExternalLink, Pencil } from "lucide-react";
 import { Button, Card, EmptyState, Input, Pill } from "@/components/ui";
 import {
   channelLabel,
@@ -87,7 +87,17 @@ export function DigitalOptiBoard({
   const [hidePaused, setHidePaused] = useState(false);
   const [addingClient, setAddingClient] = useState(false);
   const [addingTactical, setAddingTactical] = useState(false);
+  const [collapsedParents, setCollapsedParents] = useState<Set<number>>(new Set());
   const [, startTransition] = useTransition();
+
+  function toggleParentCollapsed(clientId: number) {
+    setCollapsedParents((prev) => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
+  }
 
   // Not every client is due every week — a client whose tier isn't in this
   // week's Black/Yellow/Blue rotation simply doesn't appear on the board
@@ -103,6 +113,22 @@ export function DigitalOptiBoard({
       (c) => !myClientsOnly || c.channels.some((ch) => ch.owners.some((o) => o.profileId === myProfileId)),
     )
     .filter((c) => !hidePaused || c.status !== "paused");
+
+  // How many of a parent's tacticals are currently in view — drives the
+  // collapse toggle and its count badge (only a parent with at least one
+  // visible child gets one).
+  const childCountByParent = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const row of filteredRows) {
+      if (row.parentId == null) continue;
+      counts.set(row.parentId, (counts.get(row.parentId) ?? 0) + 1);
+    }
+    return counts;
+  }, [filteredRows]);
+
+  const visibleRows = filteredRows.filter(
+    (row) => row.parentId == null || !collapsedParents.has(row.parentId),
+  );
 
   function setWipUrl(clientId: number, url: string | null) {
     setClientRows((prev) => prev.map((c) => (c.id !== clientId ? c : { ...c, wipDocUrl: url })));
@@ -272,8 +298,10 @@ export function DigitalOptiBoard({
             )}
           </div>
           <div className="flex flex-col gap-1.5">
-          {filteredRows.map((client) => {
+          {visibleRows.map((client) => {
             const status = clientStatusMeta(client.status);
+            const childCount = childCountByParent.get(client.id) ?? 0;
+            const isCollapsed = collapsedParents.has(client.id);
             return (
               <div
                 key={client.id}
@@ -285,10 +313,28 @@ export function DigitalOptiBoard({
                 <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-ink px-2.5 py-1 text-white">
                   {client.parentId != null ? (
                     <CornerDownRight className="h-3.5 w-3.5 flex-none text-white/60" strokeWidth={2} aria-hidden />
+                  ) : childCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleParentCollapsed(client.id)}
+                      aria-label={isCollapsed ? "Expand sub-clients" : "Collapse sub-clients"}
+                      className="flex-none text-white/70 hover:text-white"
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight className="h-4 w-4" strokeWidth={2} />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" strokeWidth={2} />
+                      )}
+                    </button>
                   ) : (
                     <span className="h-2 w-2 flex-none rounded-full" style={{ background: "#FDB600" }} />
                   )}
                   <span className="text-sm font-bold">{client.name}</span>
+                  {childCount > 0 && (
+                    <span className="text-[10px] font-semibold text-white/50">
+                      {isCollapsed ? `+${childCount}` : ""}
+                    </span>
+                  )}
                   <div className="ml-auto flex flex-none items-center gap-1.5">
                     {client.parentId != null && client.includedInParentRetainer ? (
                       <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold text-white/80">
