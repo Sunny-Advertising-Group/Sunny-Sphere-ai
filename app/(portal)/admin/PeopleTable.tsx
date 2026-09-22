@@ -6,6 +6,7 @@ import {
   grantSection,
   removeMember,
   revokeSection,
+  updateFullName,
   updateRole,
   updateTeam,
 } from "@/lib/actions/admin";
@@ -45,6 +46,13 @@ export function PeopleTable({ people, currentUserId }: { people: Person[]; curre
     setRows((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
     startTransition(async () => {
       await updateRole(id, role);
+    });
+  }
+
+  function changeFullName(id: string, fullName: string) {
+    setRows((prev) => prev.map((p) => (p.id === id ? { ...p, full_name: fullName || null } : p)));
+    startTransition(async () => {
+      await updateFullName(id, fullName);
     });
   }
 
@@ -147,8 +155,16 @@ export function PeopleTable({ people, currentUserId }: { people: Person[]; curre
             <Fragment key={p.id}>
               <tr className="border-b border-border-c last:border-0">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-ink">{p.full_name || p.email}</div>
-                  <div className="text-xs text-charcoal">{p.email}</div>
+                  <input
+                    type="text"
+                    defaultValue={p.full_name ?? ""}
+                    placeholder={p.email}
+                    onBlur={(e) => {
+                      if (e.target.value.trim() !== (p.full_name ?? "")) changeFullName(p.id, e.target.value.trim());
+                    }}
+                    className="w-36 rounded-lg border border-border-c bg-white px-2 py-1 text-sm font-medium text-ink outline-none focus:border-gold"
+                  />
+                  <div className="mt-1 text-xs text-charcoal">{p.email}</div>
                 </td>
                 <td className="px-4 py-3">
                   <input

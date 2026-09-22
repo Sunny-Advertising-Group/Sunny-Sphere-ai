@@ -220,6 +220,20 @@ export async function updateTeam(userId: string, team: string) {
   return { success: true };
 }
 
+export async function updateFullName(userId: string, fullName: string) {
+  const { supabase, isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ full_name: fullName.trim() || null })
+    .eq("id", userId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
 export async function grantSection(userId: string, section: string) {
   const { supabase, user, isAdmin } = await requireAdmin();
   if (!user || !isAdmin) return { error: "Not authorized." };
