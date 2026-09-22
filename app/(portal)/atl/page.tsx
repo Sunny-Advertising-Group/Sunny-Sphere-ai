@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui";
 import { AtlHub, type LinkRow } from "./AtlHub";
 
 // Covers a full quarterly cadence period plus buffer, same as Digital Opti,
-// so "is this service task ticked for its current period" always has
+// so "is this service task logged for its current period" always has
 // enough log history to check.
 const LOG_LOOKBACK_DAYS = 100;
 

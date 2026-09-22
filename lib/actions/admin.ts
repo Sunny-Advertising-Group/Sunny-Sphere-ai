@@ -220,6 +220,20 @@ export async function updateTeam(userId: string, team: string) {
   return { success: true };
 }
 
+export async function updateFullName(userId: string, fullName: string) {
+  const { supabase, isAdmin } = await requireAdmin();
+  if (!isAdmin) return { error: "Not authorized." };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ full_name: fullName.trim() || null })
+    .eq("id", userId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  return { success: true };
+}
+
 export async function grantSection(userId: string, section: string) {
   const { supabase, user, isAdmin } = await requireAdmin();
   if (!user || !isAdmin) return { error: "Not authorized." };
@@ -299,6 +313,57 @@ export async function unenrollTotp() {
 // Removing a person is permanent (their login and profile are both deleted), so it's
 // gated behind a live TOTP code from the acting admin's own authenticator app —
 // on top of the requireAdmin() role check every other action here relies on.
+// Approves a client or tactical someone submitted from the Digital tab
+// (see submitDigitalClient/submitDigitalTactical): flips it live and
+// materialises its requested channels into real digital_client_channels
+// rows (this insert only succeeds here because it's running as an admin —
+// digital_client_channels_insert_admin RLS still blocks the submitter).
+export async function approveDigitalClient(clientId: number) {
+  const { supabase, user, isAdmin } = await requireAdmin();
+  if (!user || !isAdmin) return { error: "Not authorized." };
+
+  const { data: client, error: fetchError } = await supabase
+    .from("clients")
+    .select("id, requested_channels, approval_status")
+    .eq("id", clientId)
+    .single();
+  if (fetchError || !client) return { error: fetchError?.message || "Client not found." };
+  if (client.approval_status !== "pending") return { error: "Already reviewed." };
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ approval_status: "approved", reviewed_by: user.id, reviewed_at: new Date().toISOString() })
+    .eq("id", clientId);
+  if (error) return { error: error.message };
+
+  const channels = (client.requested_channels as string[] | null) ?? [];
+  if (channels.length > 0) {
+    const { error: channelError } = await supabase
+      .from("digital_client_channels")
+      .insert(channels.map((channel) => ({ client_id: clientId, channel })));
+    if (channelError) return { error: `Approved, but channels failed: ${channelError.message}` };
+  }
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function rejectDigitalClient(clientId: number) {
+  const { supabase, user, isAdmin } = await requireAdmin();
+  if (!user || !isAdmin) return { error: "Not authorized." };
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ approval_status: "rejected", reviewed_by: user.id, reviewed_at: new Date().toISOString() })
+    .eq("id", clientId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
 export async function removeMember(userId: string, code: string) {
   const { supabase, user, isAdmin } = await requireAdmin();
   if (!user || !isAdmin) return { error: "Not authorized." };

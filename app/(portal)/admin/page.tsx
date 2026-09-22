@@ -32,6 +32,7 @@ import { PeopleTable, type Person } from "./PeopleTable";
 import { TwoFactorSetup } from "./TwoFactorSetup";
 import { ResourceList } from "./ResourceList";
 import { ClientsManager } from "./ClientsManager";
+import { DigitalClientQueue, type PendingDigitalClient } from "./DigitalClientQueue";
 import { DigitalOptiLogViewer, type OptiLogRow } from "./DigitalOptiLogViewer";
 import { AtlServiceLevelLogViewer, type ServiceLevelLogRow } from "./AtlServiceLevelLogViewer";
 
@@ -75,6 +76,7 @@ export default async function AdminPage({
     { data: rawServiceLevelLogs },
     { data: tiers },
     { data: toolCategories },
+    { data: pendingDigitalClients },
   ] = await Promise.all([
     supabase
       .from("tools")
@@ -111,8 +113,9 @@ export default async function AdminPage({
     supabase
       .from("clients")
       .select(
-        "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, atl_revenue, digital_status, digital_cadence, digital_tier_id, account_lead_id",
+        "id, name, colour, team, is_active, on_atl, on_digital, wip_doc_url, retainer, atl_revenue, digital_status, digital_cadence, digital_tier_id, account_lead_id, parent_client_id, included_in_parent_retainer",
       )
+      .eq("approval_status", "approved")
       .order("name"),
     supabase.from("atl_links").select("id, client_id, kind, title, url, version_label, cadence").order("sort_order"),
     supabase.from("atl_client_assignees").select("client_id, profile_id"),
@@ -138,6 +141,13 @@ export default async function AdminPage({
       .limit(200),
     supabase.from("client_tiers").select("id, name, colour").order("sort_order"),
     supabase.from("tool_categories").select("id, name").order("name"),
+    supabase
+      .from("clients")
+      .select(
+        "id, name, retainer, included_in_parent_retainer, requested_channels, digital_cadence, parent:parent_client_id(name), submitted_by:profiles(full_name, email)",
+      )
+      .eq("approval_status", "pending")
+      .order("id"),
   ]);
 
   const grantsByUser = new Map<string, string[]>();
@@ -171,6 +181,20 @@ export default async function AdminPage({
     id: p.id,
     label: p.full_name || p.email,
   }));
+
+  const pendingDigitalClientRows: PendingDigitalClient[] = (pendingDigitalClients ?? []).map((c) => {
+    const parent = c.parent as unknown as { name: string } | null;
+    const submitter = c.submitted_by as unknown as { full_name: string | null; email: string } | null;
+    return {
+      id: c.id,
+      name: c.name,
+      parentName: parent?.name ?? null,
+      retainer: c.retainer,
+      includedInParentRetainer: c.included_in_parent_retainer,
+      requestedChannels: (c.requested_channels as string[] | null) ?? [],
+      submittedBy: submitter?.full_name || submitter?.email || "Unknown",
+    };
+  });
 
   function groupAssignees(rows: { client_id: number; profile_id: string }[] | null): Record<number, string[]> {
     const map: Record<number, string[]> = {};
@@ -395,19 +419,22 @@ export default async function AdminPage({
           />
         }
         clientsContent={
-          <ClientsManager
-            clients={clients ?? []}
-            links={atlLinks ?? []}
-            channels={digitalChannels ?? []}
-            atlAssigneesByClient={atlAssigneesByClient}
-            digitalAssigneesByClient={digitalAssigneesByClient}
-            pendingAssignments={pendingAssignments ?? []}
-            channelOwners={channelOwners ?? []}
-            clientOwners={clientOwners ?? []}
-            atlClientOwners={atlClientOwners ?? []}
-            people={personOptions}
-            tiers={tiers ?? []}
-          />
+          <div className="space-y-6">
+            <DigitalClientQueue items={pendingDigitalClientRows} />
+            <ClientsManager
+              clients={clients ?? []}
+              links={atlLinks ?? []}
+              channels={digitalChannels ?? []}
+              atlAssigneesByClient={atlAssigneesByClient}
+              digitalAssigneesByClient={digitalAssigneesByClient}
+              pendingAssignments={pendingAssignments ?? []}
+              channelOwners={channelOwners ?? []}
+              clientOwners={clientOwners ?? []}
+              atlClientOwners={atlClientOwners ?? []}
+              people={personOptions}
+              tiers={tiers ?? []}
+            />
+          </div>
         }
         peopleContent={
           <div className="space-y-6">

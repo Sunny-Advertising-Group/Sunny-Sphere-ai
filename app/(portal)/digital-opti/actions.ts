@@ -274,3 +274,97 @@ export async function deleteClientChannel(id: number) {
   revalidatePath("/admin");
   return { success: true };
 }
+
+// --- Self-serve: anyone on the Digital tab can propose a new client or a
+// "tactical" (a sub-client nested under an existing one). Both land as a
+// pending clients row — invisible on the live board — until an admin
+// approves it (lib/actions/admin.ts's approveDigitalClient/rejectDigitalClient).
+// RLS (clients_insert_pending_digital) is the real gate here: it only ever
+// allows inserting a row that's self-attributed and already 'pending'.
+
+export async function submitDigitalClient(_prevState: unknown, formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "Client name is required." };
+
+  const retainerRaw = String(formData.get("retainer") ?? "").trim();
+  const tierIdRaw = String(formData.get("digital_tier_id") ?? "").trim();
+  const cadence = String(formData.get("digital_cadence") ?? "weekly").trim();
+  const channels = formData.getAll("channels").map(String).filter(Boolean);
+
+  const { error } = await supabase.from("clients").insert({
+    name,
+    team: "Digital",
+    on_atl: false,
+    on_digital: true,
+    is_active: true,
+    digital_status: "set_up",
+    digital_cadence: cadence || "weekly",
+    digital_tier_id: tierIdRaw ? Number(tierIdRaw) : null,
+    retainer: retainerRaw ? Number(retainerRaw) : null,
+    requested_channels: channels.length > 0 ? channels : null,
+    approval_status: "pending",
+    submitted_by: user.id,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+export async function submitDigitalTactical(_prevState: unknown, formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const parentClientId = Number(formData.get("parent_client_id") ?? "");
+  if (!name) return { error: "Tactical name is required." };
+  if (!parentClientId) return { error: "Choose which client this tactical belongs to." };
+
+  const includedInParentRetainer = formData.get("retainer_type") === "included";
+  const retainerRaw = String(formData.get("retainer") ?? "").trim();
+  if (!includedInParentRetainer && !retainerRaw) {
+    return { error: "Enter the extra retainer amount, or mark it as included in the current retainer." };
+  }
+  const channels = formData.getAll("channels").map(String).filter(Boolean);
+
+  // Inherit the parent's tier/cadence so the tactical sits in the same
+  // optimisation rotation and reads correctly nested under it on the board.
+  const { data: parent } = await supabase
+    .from("clients")
+    .select("digital_tier_id, digital_cadence")
+    .eq("id", parentClientId)
+    .single();
+  if (!parent) return { error: "Parent client not found." };
+
+  const { error } = await supabase.from("clients").insert({
+    name,
+    parent_client_id: parentClientId,
+    team: "Digital",
+    on_atl: false,
+    on_digital: true,
+    is_active: true,
+    digital_status: "set_up",
+    digital_cadence: parent.digital_cadence ?? "weekly",
+    digital_tier_id: parent.digital_tier_id,
+    retainer: includedInParentRetainer ? null : Number(retainerRaw),
+    included_in_parent_retainer: includedInParentRetainer,
+    requested_channels: channels.length > 0 ? channels : null,
+    approval_status: "pending",
+    submitted_by: user.id,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}

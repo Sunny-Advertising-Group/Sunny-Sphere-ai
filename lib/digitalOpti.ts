@@ -165,6 +165,14 @@ export type ClientInput = {
   cadence: string;
   tier: TierInfo | null;
   owners: ClientOwnerInput[];
+  // A "tactical" is just another clients row nested under a parent — set
+  // when this client is one, so the board can render it indented beneath
+  // its parent instead of as its own top-level row.
+  parentId: number | null;
+  // For a tactical only: true = billed within the parent's existing
+  // retainer (this row's own `retainer` is not additional spend); false =
+  // this row's retainer is extra, on top of the parent's.
+  includedInParentRetainer: boolean;
 };
 
 export type ClientChannelCard = {
@@ -281,10 +289,36 @@ export function buildDigitalOptiBoardData(
 
   // Tiered hierarchy: untiered clients (sortOrder undefined) sort last,
   // ties broken alphabetically by name.
-  clientCards.sort((a, b) => {
+  const byTierThenName = (a: ClientCardData, b: ClientCardData) => {
     const tierDiff = (a.tier?.sortOrder ?? Infinity) - (b.tier?.sortOrder ?? Infinity);
     return tierDiff !== 0 ? tierDiff : a.name.localeCompare(b.name);
-  });
+  };
+
+  // Tacticals (parentId set) are sorted immediately after their parent
+  // rather than by tier, so they read as a nested sub-row on the board. A
+  // tactical whose parent got filtered out upstream (e.g. archived) has
+  // nowhere to nest, so it falls back to sorting as its own top-level row.
+  const topLevel = clientCards.filter((c) => c.parentId == null).sort(byTierThenName);
+  const topLevelIds = new Set(topLevel.map((c) => c.id));
+  const childrenByParent = new Map<number, ClientCardData[]>();
+  const orphans: ClientCardData[] = [];
+  for (const c of clientCards) {
+    if (c.parentId == null) continue;
+    if (!topLevelIds.has(c.parentId)) {
+      orphans.push(c);
+      continue;
+    }
+    const arr = childrenByParent.get(c.parentId) ?? [];
+    arr.push(c);
+    childrenByParent.set(c.parentId, arr);
+  }
+  for (const arr of childrenByParent.values()) arr.sort((a, b) => a.name.localeCompare(b.name));
+
+  clientCards.length = 0;
+  for (const parent of topLevel) {
+    clientCards.push(parent, ...(childrenByParent.get(parent.id) ?? []));
+  }
+  clientCards.push(...orphans.sort(byTierThenName));
 
   // Every owner on a client counts as a FULL client (a second is still "one
   // of your accounts"), but only their split share of its retainer.
