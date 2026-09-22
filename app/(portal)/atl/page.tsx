@@ -23,6 +23,7 @@ export default async function AtlPage() {
     { data: serviceTasks },
     { data: serviceTaskLogs },
     { data: loaLinks },
+    { data: handovers },
     { data: rawAssignees },
     { data: people },
   ] = await Promise.all([
@@ -41,6 +42,10 @@ export default async function AtlPage() {
       .select("task_id, completed_by, completed_at, voided_at, note")
       .gte("completed_at", lookbackIsoDate(LOG_LOOKBACK_DAYS, now)),
     supabase.from("resources").select("id, title, url").eq("section", "atl_loa_link").order("sort_order"),
+    supabase
+      .from("handovers")
+      .select("id, title, covering_for, starts_on, ends_on, file_path, source_url, uploaded_by")
+      .order("created_at", { ascending: false }),
     supabase.from("atl_client_assignees").select("client_id, profile_id"),
     supabase.from("profiles").select("id, full_name, email").order("full_name"),
   ]);
@@ -90,6 +95,7 @@ export default async function AtlPage() {
         serviceTasks={serviceTasks ?? []}
         serviceTaskLogs={serviceTaskLogs ?? []}
         loaLinks={loaLinks ?? []}
+        handovers={handovers ?? []}
         assigneesByClient={Object.fromEntries(assigneesByClient)}
         people={(people ?? []).map((p) => ({ id: p.id, name: p.full_name || p.email }))}
         isAdmin={visibility.isAdmin}
