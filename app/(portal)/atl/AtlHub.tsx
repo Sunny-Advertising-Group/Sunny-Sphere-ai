@@ -27,6 +27,7 @@ import {
   updateServiceTask,
 } from "./actions";
 import { LoaLinks, type LoaLink } from "./LoaLinks";
+import { HandoversList, type Handover } from "./handovers/HandoversList";
 
 export type PersonRow = { id: string; name: string };
 
@@ -58,6 +59,7 @@ export function AtlHub({
   serviceTasks,
   serviceTaskLogs,
   loaLinks,
+  handovers,
   assigneesByClient,
   people,
   isAdmin,
@@ -68,12 +70,13 @@ export function AtlHub({
   serviceTasks: ServiceTaskInput[];
   serviceTaskLogs: ServiceTaskLogInput[];
   loaLinks: LoaLink[];
+  handovers: Handover[];
   assigneesByClient: Record<number, PersonRow[]>;
   people: PersonRow[];
   isAdmin: boolean;
   currentUserId: string;
 }) {
-  const [view, setView] = useState<"checklist" | "client" | "category">("checklist");
+  const [view, setView] = useState<"checklist" | "client" | "category" | "handovers">("checklist");
   const [openKinds, setOpenKinds] = useState<Set<string>>(new Set());
   const [tasks, setTasks] = useState(serviceTasks);
   const [taskLogs, setTaskLogs] = useState(serviceTaskLogs);
@@ -203,7 +206,7 @@ export function AtlHub({
   return (
     <div>
       <div className="flex gap-2 border-b border-border-c bg-white px-8 py-4">
-        {(["checklist", "client", "category"] as const).map((v) => (
+        {(["checklist", "client", "category", "handovers"] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -211,7 +214,7 @@ export function AtlHub({
               view === v ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
             }`}
           >
-            {v === "checklist" ? "Checklist" : v === "client" ? "By client" : "By category"}
+            {v === "checklist" ? "Checklist" : v === "client" ? "By client" : v === "category" ? "By category" : "Handovers"}
           </button>
         ))}
       </div>
@@ -263,6 +266,8 @@ export function AtlHub({
               </div>
             </div>
           ))
+        ) : view === "handovers" ? (
+          <HandoversList handovers={handovers} currentUserId={currentUserId} isAdmin={isAdmin} />
         ) : byCategory.length === 0 ? (
           <EmptyState icon={BarChart3} title="No links yet" description="Add links to clients to see them grouped by category here." />
         ) : (

@@ -542,6 +542,67 @@ export async function addServiceTaskReminder(title: string, clientName: string, 
   return { success: true };
 }
 
+// --- Handovers: HTML write-ups (or a Google Doc link) covering an account
+// while someone is away. Anyone can publish their own handover (enforced by
+// the handovers_insert_own RLS policy — uploaded_by must equal auth.uid());
+// only the uploader or an admin can edit/delete it. The HTML file itself is
+// uploaded straight from the browser to the "handovers" Storage bucket (see
+// UploadHandoverForm), same as Monthly Wraps — this action only ever
+// receives the resulting storage path plus small text fields. ---
+
+export type HandoverFields = {
+  title: string;
+  coveringFor: string;
+  startsOn: string;
+  endsOn: string;
+  filePath?: string;
+  sourceUrl?: string;
+};
+
+export async function createHandover(fields: HandoverFields) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const title = fields.title.trim();
+  const filePath = fields.filePath?.trim() || null;
+  const sourceUrl = fields.sourceUrl?.trim() || null;
+  if (!title) return { error: "Give the handover a title." };
+  if (!filePath && !sourceUrl) return { error: "Upload an HTML file or link a Google Doc." };
+
+  const { data, error } = await supabase
+    .from("handovers")
+    .insert({
+      title,
+      covering_for: fields.coveringFor.trim() || null,
+      starts_on: fields.startsOn || null,
+      ends_on: fields.endsOn || null,
+      file_path: filePath,
+      source_url: sourceUrl,
+      uploaded_by: user.id,
+    })
+    .select("id")
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  return { success: true, id: data.id };
+}
+
+export async function deleteHandover(id: number) {
+  const supabase = await createClient();
+  const { data: handover } = await supabase.from("handovers").select("file_path").eq("id", id).single();
+  if (handover?.file_path) await supabase.storage.from("handovers").remove([handover.file_path]);
+
+  const { error } = await supabase.from("handovers").delete().eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/atl");
+  return { success: true };
+}
+
 // --- Admin: service level audit log (verify / deny a tick) ---
 
 export async function voidServiceTaskLog(logId: number) {
