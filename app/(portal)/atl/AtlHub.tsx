@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition, type ChangeEvent } from "react";
-import { BarChart3, Check, ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
+import { BarChart3, CalendarPlus, Check, ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
 import { Button, Card, EmptyState, Input, Select, Textarea } from "@/components/ui";
 import {
   buildServiceTaskData,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/atl";
 import {
   addServiceTask,
+  addServiceTaskReminder,
   bulkAddServiceTaskToAllClients,
   deleteServiceTask,
   logServiceTask,
@@ -155,6 +156,15 @@ export function AtlHub({
     });
   }
 
+  async function addReminder(item: ServiceTaskItem) {
+    if (!item.nextDue) return { error: "This task doesn't have a next due date yet." };
+    const dueDateIso = item.nextDue.toISOString().slice(0, 10);
+    return (await addServiceTaskReminder(item.title, item.clientName, dueDateIso)) as {
+      success?: boolean;
+      error?: string;
+    };
+  }
+
   function bulkAddTask(title: string, cadence: string) {
     startTransition(async () => {
       const result = await bulkAddServiceTaskToAllClients(title, cadence);
@@ -230,6 +240,7 @@ export function AtlHub({
                 onEditTask={editTask}
                 onRemoveTask={removeTask}
                 onBulkAddTask={bulkAddTask}
+                onAddReminder={addReminder}
               />
             </div>
           </div>
@@ -339,6 +350,7 @@ function ServiceTaskBoard({
   onEditTask,
   onRemoveTask,
   onBulkAddTask,
+  onAddReminder,
 }: {
   items: ServiceTaskItem[];
   completionPct: number;
@@ -354,16 +366,42 @@ function ServiceTaskBoard({
   onEditTask: (taskId: number, fields: { cadence?: string; assignedTo?: string | null }) => void;
   onRemoveTask: (taskId: number) => void;
   onBulkAddTask: (title: string, cadence: string) => void;
+  onAddReminder: (item: ServiceTaskItem) => Promise<{ success?: boolean; error?: string }>;
 }) {
   const [addingForClient, setAddingForClient] = useState<number | null>(null);
   const [bulkAdding, setBulkAdding] = useState(false);
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [reminderStatus, setReminderStatus] = useState<Record<number, string>>({});
 
   if (clients.length === 0) {
     return <EmptyState icon={BarChart3} title="No ATL clients yet" />;
   }
 
-  const groups = groupServiceTasksByClient(items);
+  const assigneeFilterOptions = new Map<string, string>();
+  let hasUnassigned = false;
+  for (const item of items) {
+    if (item.assignedTo) assigneeFilterOptions.set(item.assignedTo, peopleById.get(item.assignedTo) ?? "Unknown");
+    else hasUnassigned = true;
+  }
+  const sortedAssigneeOptions = Array.from(assigneeFilterOptions.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+
+  const filteredItems =
+    assigneeFilter === "all"
+      ? items
+      : assigneeFilter === "unassigned"
+        ? items.filter((item) => !item.assignedTo)
+        : items.filter((item) => item.assignedTo === assigneeFilter);
+
+  const groups = groupServiceTasksByClient(filteredItems);
   const groupsByClientId = new Map(groups.map((g) => [g.clientId, g]));
+  const visibleClients =
+    assigneeFilter === "all" ? clients : clients.filter((c) => (groupsByClientId.get(c.id)?.items.length ?? 0) > 0);
+
+  async function addReminder(item: ServiceTaskItem) {
+    setReminderStatus((prev) => ({ ...prev, [item.taskId]: "Adding…" }));
+    const result = await onAddReminder(item);
+    setReminderStatus((prev) => ({ ...prev, [item.taskId]: result.error ?? "Added to your calendar" }));
+  }
 
   return (
     <div className="space-y-4">
@@ -377,6 +415,21 @@ function ServiceTaskBoard({
         </div>
         <div className="mt-1 text-xs text-charcoal">{totalDone} of {totalActive} tasks up to date this period</div>
       </Card>
+
+      {(sortedAssigneeOptions.length > 0 || hasUnassigned) && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold text-charcoal">Filter by assignee</label>
+          <Select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="w-auto !py-1 text-xs">
+            <option value="all">Everyone</option>
+            {sortedAssigneeOptions.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+            {hasUnassigned && <option value="unassigned">Unassigned</option>}
+          </Select>
+        </div>
+      )}
 
       {isAdmin && (
         <div>
@@ -402,8 +455,11 @@ function ServiceTaskBoard({
         </div>
       )}
 
+      {visibleClients.length === 0 ? (
+        <EmptyState icon={BarChart3} title="No tasks match this filter" />
+      ) : (
       <div className="flex flex-col gap-3">
-        {clients.map((client) => {
+        {visibleClients.map((client) => {
           const group = groupsByClientId.get(client.id);
           const clientPeople = assigneesByClient[client.id] ?? [];
           return (
@@ -526,7 +582,26 @@ function ServiceTaskBoard({
                               {(item.lastCompletedBy && peopleById.get(item.lastCompletedBy)) || "—"}
                             </td>
                             <td className="px-3 py-2 text-charcoal">
-                              {item.nextDue ? item.nextDue.toLocaleDateString("en-AU") : "—"}
+                              {item.nextDue ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span>{item.nextDue.toLocaleDateString("en-AU")}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => addReminder(item)}
+                                    title="Add a reminder to your Google Calendar"
+                                    className="text-charcoal hover:text-gold"
+                                  >
+                                    <CalendarPlus size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                "—"
+                              )}
+                              {reminderStatus[item.taskId] && (
+                                <div className="mt-0.5 text-[10px] normal-case text-charcoal">
+                                  {reminderStatus[item.taskId]}
+                                </div>
+                              )}
                             </td>
                             <td className="px-3 py-2">
                               <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusMeta.className}`}>
@@ -558,6 +633,7 @@ function ServiceTaskBoard({
           );
         })}
       </div>
+      )}
     </div>
   );
 }

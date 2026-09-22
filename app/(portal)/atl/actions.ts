@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { periodStart } from "@/lib/digitalOpti";
 import { AUDIO_STAGES } from "@/lib/audio";
+import { createReminderEvent } from "@/lib/googleCalendar";
 
 // `clients` is the single shared roster for both ATL and Digital — a client
 // can be on either, both, or neither (on_atl/on_digital), with shared fields
@@ -516,6 +517,28 @@ export async function unlogServiceTask(taskId: number) {
   if (error) return { error: error.message };
 
   revalidatePath("/atl");
+  return { success: true };
+}
+
+// Adds a one-off Google Calendar reminder (on the current user's own
+// calendar) for a service task's next due date — a manual nudge alongside
+// the automatic tagging sync the Tasks board already does.
+export async function addServiceTaskReminder(title: string, clientName: string, dueDate: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const result = await createReminderEvent(user.id, { title: `${clientName} — ${title}`, date: dueDate });
+  if (!result.ok) {
+    return {
+      error:
+        result.reason === "not_connected"
+          ? "Connect Google Calendar from the Tasks page first."
+          : "Couldn't add the reminder to your calendar.",
+    };
+  }
   return { success: true };
 }
 
