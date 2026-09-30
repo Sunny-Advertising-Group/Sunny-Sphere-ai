@@ -6,7 +6,6 @@ import { BarChart3, Check, ChevronDown, ChevronRight, Plus, Trash2, X } from "lu
 import { Button, Card, EmptyState, Input, Select, Textarea } from "@/components/ui";
 import {
   buildServiceTaskData,
-  cadenceLabel,
   categoryKind,
   groupServiceTasksByClient,
   kindLabel,
@@ -223,7 +222,6 @@ export function AtlHub({
                 clients={clients}
                 assigneesByClient={assigneesByClient}
                 peopleById={peopleByIdMap}
-                isAdmin={isAdmin}
                 onTick={(item) => setCompleteModalItem(item)}
                 onUntick={(item) => untickTask(item.taskId)}
                 onAddTask={addTask}
@@ -332,7 +330,6 @@ function ServiceTaskBoard({
   clients,
   assigneesByClient,
   peopleById,
-  isAdmin,
   onTick,
   onUntick,
   onAddTask,
@@ -347,7 +344,6 @@ function ServiceTaskBoard({
   clients: ClientRow[];
   assigneesByClient: Record<number, PersonRow[]>;
   peopleById: Map<string, string>;
-  isAdmin: boolean;
   onTick: (item: ServiceTaskItem) => void;
   onUntick: (item: ServiceTaskItem) => void;
   onAddTask: (clientId: number, title: string, cadence: string, assignedTo: string | null) => void;
@@ -378,29 +374,27 @@ function ServiceTaskBoard({
         <div className="mt-1 text-xs text-charcoal">{totalDone} of {totalActive} tasks up to date this period</div>
       </Card>
 
-      {isAdmin && (
-        <div>
-          {bulkAdding ? (
-            <AddServiceTaskForm
-              people={[]}
-              hideAssignee
-              onSubmit={(title, cadence) => {
-                onBulkAddTask(title, cadence);
-                setBulkAdding(false);
-              }}
-              onCancel={() => setBulkAdding(false)}
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setBulkAdding(true)}
-              className="flex items-center gap-1 rounded-full border border-border-c px-3 py-1.5 text-xs font-semibold text-charcoal hover:border-gold hover:text-ink"
-            >
-              <Plus size={12} /> Add task to every ATL client
-            </button>
-          )}
-        </div>
-      )}
+      <div>
+        {bulkAdding ? (
+          <AddServiceTaskForm
+            people={[]}
+            hideAssignee
+            onSubmit={(title, cadence) => {
+              onBulkAddTask(title, cadence);
+              setBulkAdding(false);
+            }}
+            onCancel={() => setBulkAdding(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setBulkAdding(true)}
+            className="flex items-center gap-1 rounded-full border border-border-c px-3 py-1.5 text-xs font-semibold text-charcoal hover:border-gold hover:text-ink"
+          >
+            <Plus size={12} /> Add task to every ATL client
+          </button>
+        )}
+      </div>
 
       <div className="flex flex-col gap-3">
         {clients.map((client) => {
@@ -413,15 +407,13 @@ function ServiceTaskBoard({
                   <span className="h-2 w-2 flex-none rounded-full" style={{ background: client.colour || "#FDB600" }} />
                   <div className="text-sm font-bold">{client.name}</div>
                 </div>
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => setAddingForClient(addingForClient === client.id ? null : client.id)}
-                    className="flex items-center gap-1 rounded-full border border-white/30 px-2 py-0.5 text-[11px] font-semibold text-white hover:border-gold"
-                  >
-                    <Plus size={12} /> Task
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setAddingForClient(addingForClient === client.id ? null : client.id)}
+                  className="flex items-center gap-1 rounded-full border border-white/30 px-2 py-0.5 text-[11px] font-semibold text-white hover:border-gold"
+                >
+                  <Plus size={12} /> Task
+                </button>
               </div>
 
               {addingForClient === client.id && (
@@ -451,7 +443,7 @@ function ServiceTaskBoard({
                         <th className="px-3 py-2">Next due</th>
                         <th className="px-3 py-2">Status</th>
                         <th className="px-3 py-2">Notes</th>
-                        {isAdmin && <th className="px-3 py-2" />}
+                        <th className="px-3 py-2" />
                       </tr>
                     </thead>
                     <tbody>
@@ -461,45 +453,35 @@ function ServiceTaskBoard({
                           <tr key={item.taskId} className="border-b border-border-c align-top last:border-0">
                             <td className="px-3 py-2 font-medium text-ink">{item.title}</td>
                             <td className="px-3 py-2">
-                              {isAdmin ? (
-                                <Select
-                                  value={item.assignedTo ?? ""}
-                                  onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                                    onEditTask(item.taskId, { assignedTo: e.target.value || null })
-                                  }
-                                  className="!py-1 text-xs"
-                                >
-                                  <option value="">Unassigned</option>
-                                  {clientPeople.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      {p.name}
-                                    </option>
-                                  ))}
-                                </Select>
-                              ) : (
-                                <span className="text-charcoal">
-                                  {(item.assignedTo && peopleById.get(item.assignedTo)) || "Unassigned"}
-                                </span>
-                              )}
+                              <Select
+                                value={item.assignedTo ?? ""}
+                                onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                                  onEditTask(item.taskId, { assignedTo: e.target.value || null })
+                                }
+                                className="!py-1 text-xs"
+                              >
+                                <option value="">Unassigned</option>
+                                {clientPeople.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name}
+                                  </option>
+                                ))}
+                              </Select>
                             </td>
                             <td className="px-3 py-2">
-                              {isAdmin ? (
-                                <Select
-                                  value={item.cadence}
-                                  onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                                    onEditTask(item.taskId, { cadence: e.target.value })
-                                  }
-                                  className="!py-1 text-xs"
-                                >
-                                  {CADENCE_OPTIONS.filter((c) => c.value !== "none").map((c) => (
-                                    <option key={c.value} value={c.value}>
-                                      {c.label}
-                                    </option>
-                                  ))}
-                                </Select>
-                              ) : (
-                                <span className="text-charcoal">{cadenceLabel(item.cadence)}</span>
-                              )}
+                              <Select
+                                value={item.cadence}
+                                onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                                  onEditTask(item.taskId, { cadence: e.target.value })
+                                }
+                                className="!py-1 text-xs"
+                              >
+                                {CADENCE_OPTIONS.filter((c) => c.value !== "none").map((c) => (
+                                  <option key={c.value} value={c.value}>
+                                    {c.label}
+                                  </option>
+                                ))}
+                              </Select>
                             </td>
                             <td className="px-3 py-2">
                               <button
@@ -536,17 +518,15 @@ function ServiceTaskBoard({
                             <td className="max-w-[200px] whitespace-normal px-3 py-2 text-charcoal">
                               {item.lastNote ?? "—"}
                             </td>
-                            {isAdmin && (
-                              <td className="px-3 py-2 text-right">
-                                <button
-                                  onClick={() => onRemoveTask(item.taskId)}
-                                  aria-label="Delete task"
-                                  className="text-charcoal hover:text-red-600"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </td>
-                            )}
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                onClick={() => onRemoveTask(item.taskId)}
+                                aria-label="Delete task"
+                                className="text-charcoal hover:text-red-600"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}

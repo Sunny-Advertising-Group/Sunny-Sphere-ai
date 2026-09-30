@@ -381,9 +381,11 @@ export async function deleteAudioItem(id: number) {
 
 // --- Service level: a fully configurable per-client task list (report sent,
 // WAG checks, client phone call, etc), each with its own cadence and an
-// assignee. Admins manage the task list itself; anyone on ATL can tick a
-// task off for its current cadence period, picking who actually completed it
-// (not necessarily themselves) with an optional note. ---
+// assignee. Anyone with ATL access can manage the task list itself (add,
+// reassign, change cadence, delete — atl_service_level_tasks RLS checks
+// has_section('atl')) and tick a task off for its current cadence period,
+// picking who actually completed it (not necessarily themselves) with an
+// optional note. ---
 
 const SERVICE_TASK_SELECT = "id, client_id, title, cadence, assigned_to, sort_order";
 
