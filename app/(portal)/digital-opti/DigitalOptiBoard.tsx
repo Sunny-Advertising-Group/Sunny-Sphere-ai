@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ChevronDown, ChevronRight, CornerDownRight, ExternalLink, Pencil } from "lucide-react";
+import { ChevronDown, ChevronRight, CornerDownRight, Download, ExternalLink, Pencil } from "lucide-react";
 import { Button, Card, EmptyState, Input, Pill } from "@/components/ui";
 import {
+  cadenceLabel,
   channelLabel,
   clientStatusMeta,
   currentWeekCommencing,
@@ -12,8 +13,9 @@ import {
   type TeamSplitRow,
   type TierInfo,
 } from "@/lib/digitalOpti";
-import { logOpti, unlogOpti, updateClientWipUrl, updateScheduleLabel } from "./actions";
+import { logOpti, unlogOpti, updateClientWipUrl } from "./actions";
 import { AddClientModal, AddTacticalModal } from "./AddClientForms";
+import { EditClientModal, type PersonOption } from "./EditClientModal";
 
 export type { ClientCardData, TeamSplitRow };
 
@@ -31,6 +33,94 @@ function formatWeekCommencing(): string {
     month: "long",
     timeZone: "UTC",
   });
+}
+
+function formatEndDate(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+// Which slice of the client list the board shows. "week" is this week's
+// opti rotation (the default); "all" is every live client regardless of
+// rotation (for grabbing a WIP link, checking the split, etc); "not_optid"
+// is every client — due this week or not — with at least one unticked
+// channel, for the end-of-week check.
+type ViewFilter = "week" | "all" | "not_optid";
+
+const VIEW_FILTERS: { value: ViewFilter; label: string }[] = [
+  { value: "week", label: "This week's opti" },
+  { value: "all", label: "All clients" },
+  { value: "not_optid", label: "Not opti'd" },
+];
+
+function csvCell(value: string | number | null | undefined): string {
+  const text = value == null ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function buildBoardCsv(rows: ClientCardData[]): string {
+  const nameById = new Map(rows.map((c) => [c.id, c.name]));
+  const header = [
+    "Client",
+    "Parent client",
+    "Tier",
+    "Status",
+    "Cadence",
+    "Due this week",
+    "Retainer",
+    "Included in parent retainer",
+    "Lead",
+    "Second",
+    "Retainer split",
+    "Channels",
+    "Channels done",
+    "Channels not done",
+    "WIP link",
+    "End date",
+  ];
+  const lines = rows.map((c) =>
+    [
+      c.name,
+      c.parentId != null ? (nameById.get(c.parentId) ?? "") : "",
+      c.tier?.name ?? "",
+      clientStatusMeta(c.status).label,
+      cadenceLabel(c.cadence),
+      c.dueThisWeek ? "Yes" : "No",
+      c.retainer ?? "",
+      c.parentId != null ? (c.includedInParentRetainer ? "Yes" : "No") : "",
+      c.leadName ?? "",
+      c.secondName ?? "",
+      c.effectiveOwners.map((o) => `${o.name} ${o.splitPct}%`).join("; "),
+      c.channels
+        .map((ch) => {
+          const owners = ch.owners.map((o) => o.name).join(", ");
+          return owners ? `${channelLabel(ch.channel)} (${owners})` : channelLabel(ch.channel);
+        })
+        .join("; "),
+      c.channels.filter((ch) => ch.done).map((ch) => channelLabel(ch.channel)).join("; "),
+      c.channels.filter((ch) => !ch.done).map((ch) => channelLabel(ch.channel)).join("; "),
+      c.wipDocUrl ?? "",
+      c.endDate ?? "",
+    ]
+      .map(csvCell)
+      .join(","),
+  );
+  return [header.map(csvCell).join(","), ...lines].join("\n");
+}
+
+function downloadCsv(filename: string, content: string) {
+  // BOM so Excel opens it as UTF-8 (names with accents etc).
+  const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function formatRelativeTime(iso: string, now: number): string {
@@ -67,6 +157,7 @@ export function DigitalOptiBoard({
   myProfileId,
   parentClientOptions,
   myPending,
+  people,
 }: {
   clients: ClientCardData[];
   completionPct: number;
@@ -80,9 +171,13 @@ export function DigitalOptiBoard({
   myProfileId: string;
   parentClientOptions: { id: number; name: string }[];
   myPending: PendingSubmission[];
+  people: PersonOption[];
 }) {
   const [clientRows, setClientRows] = useState(clients);
+  const [viewFilter, setViewFilter] = useState<ViewFilter>("week");
   const [tierFilter, setTierFilter] = useState<number | "all">("all");
+  const [editingClientId, setEditingClientId] = useState<number | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [myClientsOnly, setMyClientsOnly] = useState(false);
   const [hidePaused, setHidePaused] = useState(false);
   const [addingClient, setAddingClient] = useState(false);
@@ -99,15 +194,27 @@ export function DigitalOptiBoard({
     });
   }
 
-  // Not every client is due every week — a client whose tier isn't in this
-  // week's Black/Yellow/Blue rotation simply doesn't appear on the board
-  // until its week comes back around.
-  const dueRows = useMemo(() => clientRows.filter((c) => c.dueThisWeek), [clientRows]);
+  // Keep the board in sync after an edit popup save (router.refresh hands
+  // down fresh server data).
+  const [prevClients, setPrevClients] = useState(clients);
+  if (prevClients !== clients) {
+    setPrevClients(clients);
+    setClientRows(clients);
+  }
+
+  // Not every client is due every week — by default the board shows only
+  // clients whose tier is in this week's Black/Yellow/Blue rotation; the
+  // other views widen it out.
+  const viewRows = useMemo(() => {
+    if (viewFilter === "week") return clientRows.filter((c) => c.dueThisWeek);
+    if (viewFilter === "not_optid") return clientRows.filter((c) => c.channels.some((ch) => !ch.done));
+    return clientRows;
+  }, [clientRows, viewFilter]);
   const usedTiers = useMemo(
-    () => tiers.filter((t) => dueRows.some((c) => c.tier?.id === t.id)),
-    [tiers, dueRows],
+    () => tiers.filter((t) => viewRows.some((c) => c.tier?.id === t.id)),
+    [tiers, viewRows],
   );
-  const filteredRows = dueRows
+  const filteredRows = viewRows
     .filter((c) => tierFilter === "all" || c.tier?.id === tierFilter)
     .filter(
       (c) => !myClientsOnly || c.channels.some((ch) => ch.owners.some((o) => o.profileId === myProfileId)),
@@ -129,6 +236,15 @@ export function DigitalOptiBoard({
   const visibleRows = filteredRows.filter(
     (row) => row.parentId == null || !collapsedParents.has(row.parentId),
   );
+
+  const editingClient = editingClientId != null ? clientRows.find((c) => c.id === editingClientId) : undefined;
+
+  function exportCsv(scope: "week" | "all") {
+    const rows = scope === "week" ? clientRows.filter((c) => c.dueThisWeek) : clientRows;
+    const weekIso = currentWeekCommencing().toISOString().slice(0, 10);
+    downloadCsv(`digital-opti-${scope === "week" ? "this-week" : "all-clients"}-${weekIso}.csv`, buildBoardCsv(rows));
+    setExportOpen(false);
+  }
 
   function setWipUrl(clientId: number, url: string | null) {
     setClientRows((prev) => prev.map((c) => (c.id !== clientId ? c : { ...c, wipDocUrl: url })));
@@ -165,7 +281,7 @@ export function DigitalOptiBoard({
       <div className="space-y-2">
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="Week commencing" value={formatWeekCommencing()} />
-          <ScheduleTile label={scheduleLabel} isAdmin={isAdmin} />
+          <StatTile label="Schedule" value={scheduleLabel ?? "—"} />
           <Card className="p-2">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">
               Optimisation completion
@@ -233,6 +349,36 @@ export function DigitalOptiBoard({
           <Button variant="ghost" onClick={() => setAddingTactical(true)} className="px-3 py-1.5 text-xs">
             + Add tactical
           </Button>
+          {clientRows.length > 0 && (
+            <div className="relative">
+              <Button
+                variant="ghost"
+                onClick={() => setExportOpen((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
+              >
+                <Download className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                Export CSV
+              </Button>
+              {exportOpen && (
+                <div className="absolute left-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-lg border border-border-c bg-white shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => exportCsv("week")}
+                    className="block w-full px-3 py-2 text-left text-xs font-medium text-ink hover:bg-bg"
+                  >
+                    This week&apos;s opti clients
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportCsv("all")}
+                    className="block w-full px-3 py-2 text-left text-xs font-medium text-ink hover:bg-bg"
+                  >
+                    All clients
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         {myPending.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -251,6 +397,21 @@ export function DigitalOptiBoard({
       ) : (
         <>
           <div className="flex flex-wrap gap-2">
+            {VIEW_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => {
+                  setViewFilter(f.value);
+                  setTierFilter("all");
+                }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewFilter === f.value ? "border-gold bg-gold text-ink" : "border-border-c text-charcoal hover:border-gold/50"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+            <span className="my-auto h-4 w-px bg-border-c" aria-hidden />
             <button
               onClick={() => setMyClientsOnly((v) => !v)}
               className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -298,6 +459,11 @@ export function DigitalOptiBoard({
             )}
           </div>
           <div className="flex flex-col gap-1.5">
+          {visibleRows.length === 0 && (
+            <p className="rounded-xl border border-dashed border-border-c px-4 py-6 text-center text-sm text-charcoal">
+              {viewFilter === "not_optid" ? "Everything's opti'd — nice." : "No clients match these filters."}
+            </p>
+          )}
           {visibleRows.map((client) => {
             const status = clientStatusMeta(client.status);
             const childCount = childCountByParent.get(client.id) ?? 0;
@@ -336,6 +502,16 @@ export function DigitalOptiBoard({
                     </span>
                   )}
                   <div className="ml-auto flex flex-none items-center gap-1.5">
+                    {viewFilter !== "week" && !client.dueThisWeek && (
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/60">
+                        Off week
+                      </span>
+                    )}
+                    {client.endDate && (
+                      <span className="rounded-full bg-gold/90 px-2 py-0.5 text-[10px] font-semibold text-ink">
+                        Ends {formatEndDate(client.endDate)}
+                      </span>
+                    )}
                     {client.parentId != null && client.includedInParentRetainer ? (
                       <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold text-white/80">
                         Included in retainer
@@ -356,6 +532,15 @@ export function DigitalOptiBoard({
                         {client.tier.name}
                       </span>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setEditingClientId(client.id)}
+                      className="flex-none text-white/60 hover:text-gold"
+                      aria-label={`Edit ${client.name}`}
+                      title="Edit client"
+                    >
+                      <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                    </button>
                   </div>
                 </div>
 
@@ -420,6 +605,14 @@ export function DigitalOptiBoard({
         </>
       )}
 
+      {editingClient && (
+        <EditClientModal
+          client={editingClient}
+          tiers={tiers}
+          people={people}
+          onClose={() => setEditingClientId(null)}
+        />
+      )}
       {addingClient && <AddClientModal tiers={tiers} onClose={() => setAddingClient(false)} />}
       {addingTactical && (
         <AddTacticalModal parentClientOptions={parentClientOptions} onClose={() => setAddingTactical(false)} />
@@ -525,54 +718,5 @@ function WipBadge({
         </button>
       )}
     </span>
-  );
-}
-
-function ScheduleTile({ label, isAdmin }: { label: string | null; isAdmin: boolean }) {
-  const [editing, setEditing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function handleSubmit(fd: FormData) {
-    setError(null);
-    startTransition(async () => {
-      const result = await updateScheduleLabel(undefined, fd);
-      if (result?.success) setEditing(false);
-      else if (result?.error) setError(result.error);
-    });
-  }
-
-  if (editing) {
-    return (
-      <Card className="p-2">
-        <form action={handleSubmit} className="space-y-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
-          <Input name="schedule_label" defaultValue={label ?? ""} placeholder="e.g. PBR & BLUE" autoFocus />
-          <div className="flex gap-2">
-            <Button type="submit" disabled={pending}>
-              {pending ? "…" : "Save"}
-            </Button>
-            <button type="button" onClick={() => setEditing(false)} className="text-xs text-charcoal hover:text-ink">
-              Cancel
-            </button>
-          </div>
-          {error && <p className="text-xs font-medium text-red-600">{error}</p>}
-        </form>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="p-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-charcoal">Schedule</div>
-        {isAdmin && (
-          <button onClick={() => setEditing(true)} className="text-charcoal hover:text-gold" aria-label="Edit schedule">
-            <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-          </button>
-        )}
-      </div>
-      <div className="mt-0.5 text-xs font-bold text-ink">{label || "—"}</div>
-    </Card>
   );
 }

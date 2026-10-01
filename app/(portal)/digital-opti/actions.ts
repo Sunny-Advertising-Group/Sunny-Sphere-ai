@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
-import { periodStart } from "@/lib/digitalOpti";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { CADENCE_OPTIONS, CHANNEL_ORDER, CLIENT_STATUS_OPTIONS, periodStart } from "@/lib/digitalOpti";
 
 // --- Tracker: ticking a channel off ---
 
@@ -70,20 +72,6 @@ export async function unlogOpti(clientChannelId: number) {
 
   revalidatePath("/digital-opti");
   revalidatePath("/admin");
-  return { success: true };
-}
-
-export async function updateScheduleLabel(_prevState: unknown, formData: FormData) {
-  const supabase = await createClient();
-  const label = String(formData.get("schedule_label") ?? "").trim();
-
-  const { error } = await supabase
-    .from("digital_opti_settings")
-    .update({ schedule_label: label || null })
-    .eq("id", 1);
-  if (error) return { error: error.message };
-
-  revalidatePath("/digital-opti");
   return { success: true };
 }
 
@@ -363,6 +351,148 @@ export async function submitDigitalTactical(_prevState: unknown, formData: FormD
     submitted_by: user.id,
   });
   if (error) return { error: error.message };
+
+  revalidatePath("/digital-opti");
+  revalidatePath("/admin");
+  return { success: true };
+}
+
+// --- Self-serve: the board's "Edit client" popup. Anyone with the Digital
+// section can edit a live client and it applies straight away, so this
+// checks section access itself and then writes with the service-role client
+// (the underlying tables' RLS only lets admins write). Only the fields the
+// popup owns are ever touched — never approval/ATL fields.
+
+export type DigitalClientEdit = {
+  name: string;
+  tierId: number | null;
+  cadence: string;
+  status: string;
+  retainer: number | null;
+  includedInParentRetainer: boolean;
+  wipDocUrl: string | null;
+  endDate: string | null;
+  // The full desired state: these channels active, each with these owners.
+  channels: { channel: string; ownerIds: string[] }[];
+  owners: { profileId: string; splitPct: number }[];
+};
+
+export async function saveDigitalClient(clientId: number, edit: DigitalClientEdit) {
+  const visibility = await getVisibility();
+  if (!visibility || !visibility.canSee("digital_opti")) return { error: "You don't have access to Digital." };
+
+  const name = edit.name.trim();
+  if (!name) return { error: "Client name is required." };
+  if (!CADENCE_OPTIONS.some((c) => c.value === edit.cadence)) return { error: "Invalid cadence." };
+  if (!CLIENT_STATUS_OPTIONS.some((s) => s.value === edit.status)) return { error: "Invalid status." };
+  if (edit.retainer != null && (!Number.isFinite(edit.retainer) || edit.retainer < 0)) {
+    return { error: "Retainer must be a positive number." };
+  }
+  if (edit.endDate && !/^\d{4}-\d{2}-\d{2}$/.test(edit.endDate)) return { error: "Invalid end date." };
+  if (edit.channels.some((c) => !CHANNEL_ORDER.includes(c.channel))) return { error: "Invalid channel." };
+  if (edit.owners.some((o) => !o.profileId || !Number.isFinite(o.splitPct) || o.splitPct < 0 || o.splitPct > 100)) {
+    return { error: "Each split needs a person and a percentage between 0 and 100." };
+  }
+  if (new Set(edit.owners.map((o) => o.profileId)).size !== edit.owners.length) {
+    return { error: "The same person is listed twice in the retainer split." };
+  }
+
+  const supabase = createAdminClient();
+  const { data: client } = await supabase
+    .from("clients")
+    .select("id, parent_client_id, on_digital, approval_status")
+    .eq("id", clientId)
+    .single();
+  if (!client || !client.on_digital || client.approval_status !== "approved") return { error: "Client not found." };
+
+  const isTactical = client.parent_client_id != null;
+  const included = isTactical && edit.includedInParentRetainer;
+  const { error: clientError } = await supabase
+    .from("clients")
+    .update({
+      name,
+      digital_tier_id: edit.tierId,
+      digital_cadence: edit.cadence,
+      digital_status: edit.status,
+      retainer: included ? null : edit.retainer,
+      included_in_parent_retainer: included,
+      wip_doc_url: edit.wipDocUrl?.trim() || null,
+      end_date: edit.endDate || null,
+    })
+    .eq("id", clientId);
+  if (clientError) return { error: clientError.message };
+
+  // Channels: a dropped channel is deactivated rather than deleted, so its
+  // tick history (digital_opti_logs) survives and re-adding it later just
+  // reactivates the same row — same as the Admin page's channel toggle.
+  const { data: existingChannels, error: chError } = await supabase
+    .from("digital_client_channels")
+    .select("id, channel, is_active, owners:digital_channel_owners(id, profile_id)")
+    .eq("client_id", clientId);
+  if (chError) return { error: chError.message };
+
+  const wanted = new Map(edit.channels.map((c) => [c.channel, new Set(c.ownerIds)]));
+  for (const row of existingChannels ?? []) {
+    if (!wanted.has(row.channel) && row.is_active) {
+      const { error } = await supabase.from("digital_client_channels").update({ is_active: false }).eq("id", row.id);
+      if (error) return { error: error.message };
+    }
+  }
+  for (const [channel, ownerIds] of wanted) {
+    let row = (existingChannels ?? []).find((r) => r.channel === channel);
+    if (!row) {
+      const { data, error } = await supabase
+        .from("digital_client_channels")
+        .insert({ client_id: clientId, channel })
+        .select("id, channel, is_active")
+        .single();
+      if (error) return { error: error.message };
+      row = { ...data, owners: [] };
+    } else if (!row.is_active) {
+      const { error } = await supabase.from("digital_client_channels").update({ is_active: true }).eq("id", row.id);
+      if (error) return { error: error.message };
+    }
+
+    const current = row.owners ?? [];
+    const toRemove = current.filter((o) => !ownerIds.has(o.profile_id)).map((o) => o.id);
+    const toAdd = [...ownerIds].filter((id) => !current.some((o) => o.profile_id === id));
+    if (toRemove.length > 0) {
+      const { error } = await supabase.from("digital_channel_owners").delete().in("id", toRemove);
+      if (error) return { error: error.message };
+    }
+    if (toAdd.length > 0) {
+      const { error } = await supabase
+        .from("digital_channel_owners")
+        .insert(toAdd.map((profile_id) => ({ client_channel_id: row.id, profile_id })));
+      if (error) return { error: error.message };
+    }
+  }
+
+  // Retainer split (drives lead/second and the Team split table).
+  const { data: existingOwners, error: ownersError } = await supabase
+    .from("digital_client_owners")
+    .select("id, profile_id, split_pct")
+    .eq("client_id", clientId);
+  if (ownersError) return { error: ownersError.message };
+
+  const removedOwnerIds = (existingOwners ?? [])
+    .filter((o) => !edit.owners.some((w) => w.profileId === o.profile_id))
+    .map((o) => o.id);
+  if (removedOwnerIds.length > 0) {
+    const { error } = await supabase.from("digital_client_owners").delete().in("id", removedOwnerIds);
+    if (error) return { error: error.message };
+  }
+  for (const owner of edit.owners) {
+    const existing = (existingOwners ?? []).find((o) => o.profile_id === owner.profileId);
+    const { error } = existing
+      ? Number(existing.split_pct) === owner.splitPct
+        ? { error: null }
+        : await supabase.from("digital_client_owners").update({ split_pct: owner.splitPct }).eq("id", existing.id)
+      : await supabase
+          .from("digital_client_owners")
+          .insert({ client_id: clientId, profile_id: owner.profileId, split_pct: owner.splitPct });
+    if (error) return { error: error.message };
+  }
 
   revalidatePath("/digital-opti");
   revalidatePath("/admin");
