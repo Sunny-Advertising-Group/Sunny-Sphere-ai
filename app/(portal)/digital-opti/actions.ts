@@ -306,12 +306,14 @@ export async function submitDigitalClient(_prevState: unknown, formData: FormDat
   return { success: true };
 }
 
+// Unlike a brand-new client, a tactical goes live straight away — it hangs
+// off a client that's already been approved, so there's nothing for an admin
+// to vet. Like saveDigitalClient, this checks Digital section access itself
+// and then writes with the service-role client (RLS only lets a submitter
+// insert a pending row, and only admins can create channel rows).
 export async function submitDigitalTactical(_prevState: unknown, formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated." };
+  const visibility = await getVisibility();
+  if (!visibility || !visibility.canSee("digital_opti")) return { error: "You don't have access to Digital." };
 
   const name = String(formData.get("name") ?? "").trim();
   const parentClientId = Number(formData.get("parent_client_id") ?? "");
@@ -323,34 +325,57 @@ export async function submitDigitalTactical(_prevState: unknown, formData: FormD
   if (!includedInParentRetainer && !retainerRaw) {
     return { error: "Enter the extra retainer amount, or mark it as included in the current retainer." };
   }
-  const channels = formData.getAll("channels").map(String).filter(Boolean);
+  const retainer = includedInParentRetainer ? null : Number(retainerRaw);
+  if (retainer != null && (!Number.isFinite(retainer) || retainer < 0)) {
+    return { error: "Retainer must be a positive number." };
+  }
+  const channels = [...new Set(formData.getAll("channels").map(String).filter(Boolean))];
+  if (channels.some((c) => !CHANNEL_ORDER.includes(c))) return { error: "Invalid channel." };
+
+  const supabase = createAdminClient();
 
   // Inherit the parent's tier/cadence so the tactical sits in the same
   // optimisation rotation and reads correctly nested under it on the board.
   const { data: parent } = await supabase
     .from("clients")
-    .select("digital_tier_id, digital_cadence")
+    .select("digital_tier_id, digital_cadence, parent_client_id, on_digital, approval_status")
     .eq("id", parentClientId)
     .single();
-  if (!parent) return { error: "Parent client not found." };
+  if (!parent || !parent.on_digital || parent.approval_status !== "approved" || parent.parent_client_id != null) {
+    return { error: "Parent client not found." };
+  }
 
-  const { error } = await supabase.from("clients").insert({
-    name,
-    parent_client_id: parentClientId,
-    team: "Digital",
-    on_atl: false,
-    on_digital: true,
-    is_active: true,
-    digital_status: "set_up",
-    digital_cadence: parent.digital_cadence ?? "weekly",
-    digital_tier_id: parent.digital_tier_id,
-    retainer: includedInParentRetainer ? null : Number(retainerRaw),
-    included_in_parent_retainer: includedInParentRetainer,
-    requested_channels: channels.length > 0 ? channels : null,
-    approval_status: "pending",
-    submitted_by: user.id,
-  });
+  const now = new Date().toISOString();
+  const { data: tactical, error } = await supabase
+    .from("clients")
+    .insert({
+      name,
+      parent_client_id: parentClientId,
+      team: "Digital",
+      on_atl: false,
+      on_digital: true,
+      is_active: true,
+      digital_status: "set_up",
+      digital_cadence: parent.digital_cadence ?? "weekly",
+      digital_tier_id: parent.digital_tier_id,
+      retainer,
+      included_in_parent_retainer: includedInParentRetainer,
+      requested_channels: channels.length > 0 ? channels : null,
+      approval_status: "approved",
+      submitted_by: visibility.profile.id,
+      reviewed_by: visibility.profile.id,
+      reviewed_at: now,
+    })
+    .select("id")
+    .single();
   if (error) return { error: error.message };
+
+  if (channels.length > 0) {
+    const { error: channelError } = await supabase
+      .from("digital_client_channels")
+      .insert(channels.map((channel) => ({ client_id: tactical.id, channel })));
+    if (channelError) return { error: `Tactical added, but channels failed: ${channelError.message}` };
+  }
 
   revalidatePath("/digital-opti");
   revalidatePath("/admin");
@@ -365,6 +390,8 @@ export async function submitDigitalTactical(_prevState: unknown, formData: FormD
 
 export type DigitalClientEdit = {
   name: string;
+  // Parent client when this is a sub-client / tactical; null = top-level.
+  parentId: number | null;
   tierId: number | null;
   cadence: string;
   status: string;
@@ -405,12 +432,29 @@ export async function saveDigitalClient(clientId: number, edit: DigitalClientEdi
     .single();
   if (!client || !client.on_digital || client.approval_status !== "approved") return { error: "Client not found." };
 
-  const isTactical = client.parent_client_id != null;
+  if (edit.parentId != null) {
+    if (edit.parentId === clientId) return { error: "A client can't be its own sub-client." };
+    const [{ data: parent }, { count: childCount }] = await Promise.all([
+      supabase
+        .from("clients")
+        .select("id, parent_client_id, on_digital, approval_status")
+        .eq("id", edit.parentId)
+        .single(),
+      supabase.from("clients").select("id", { count: "exact", head: true }).eq("parent_client_id", clientId),
+    ]);
+    if (!parent || !parent.on_digital || parent.approval_status !== "approved" || parent.parent_client_id != null) {
+      return { error: "Choose a top-level Digital client as the parent." };
+    }
+    if ((childCount ?? 0) > 0) return { error: "This client has its own sub-clients, so it can't be nested." };
+  }
+
+  const isTactical = edit.parentId != null;
   const included = isTactical && edit.includedInParentRetainer;
   const { error: clientError } = await supabase
     .from("clients")
     .update({
       name,
+      parent_client_id: edit.parentId,
       digital_tier_id: edit.tierId,
       digital_cadence: edit.cadence,
       digital_status: edit.status,

@@ -136,9 +136,9 @@ export function AddTacticalModal({
 
   if (state?.success) {
     return (
-      <ModalShell title="Tactical submitted" onClose={finish}>
+      <ModalShell title="Tactical added" onClose={finish}>
         <p className="mt-3 text-sm text-charcoal">
-          Sent to the admin queue for approval. It&apos;ll appear nested under its client once it&apos;s approved.
+          It&apos;s live now, nested under its client on the board.
         </p>
         <Button className="mt-4" onClick={finish}>
           Done
@@ -206,7 +206,7 @@ export function AddTacticalModal({
 
         <div className="flex items-center gap-3 pt-1">
           <Button type="submit" disabled={pending}>
-            {pending ? "Submitting…" : "Submit for approval"}
+            {pending ? "Adding…" : "Add tactical"}
           </Button>
           <button type="button" onClick={onClose} className="text-sm text-charcoal hover:text-ink">
             Cancel
