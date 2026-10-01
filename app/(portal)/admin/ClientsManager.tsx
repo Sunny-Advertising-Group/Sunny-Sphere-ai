@@ -275,6 +275,34 @@ export function ClientsManager({
   const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set()); // empty = all teams
   const [, startTransition] = useTransition();
 
+  // Keep in sync with fresh server data (router.refresh / revalidatePath) —
+  // e.g. a retainer, split or channel change saved from the Digital tab's
+  // Edit client popup — rather than holding the first-render copy forever.
+  const serverData = {
+    clients,
+    links,
+    channels,
+    channelOwners,
+    clientOwners,
+    atlClientOwners,
+    atlAssigneesByClient,
+    digitalAssigneesByClient,
+    pendingAssignments,
+  };
+  const [prevServerData, setPrevServerData] = useState(serverData);
+  if ((Object.keys(serverData) as (keyof typeof serverData)[]).some((k) => prevServerData[k] !== serverData[k])) {
+    setPrevServerData(serverData);
+    setClientRows(clients);
+    setLinkRows(links);
+    setChannelRows(channels);
+    setOwnerRows(channelOwners);
+    setClientOwnerRows(clientOwners);
+    setAtlClientOwnerRows(atlClientOwners);
+    setAtlAssignments(atlAssigneesByClient);
+    setDigitalAssignments(digitalAssigneesByClient);
+    setPendingRows(pendingAssignments);
+  }
+
   function toggleTeamFilter(team: string) {
     setTeamFilter((prev) => {
       const next = new Set(prev);

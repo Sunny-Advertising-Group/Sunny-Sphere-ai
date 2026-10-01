@@ -610,6 +610,8 @@ export function DigitalOptiBoard({
           client={editingClient}
           tiers={tiers}
           people={people}
+          parentClientOptions={parentClientOptions}
+          hasChildren={clientRows.some((c) => c.parentId === editingClient.id)}
           onClose={() => setEditingClientId(null)}
         />
       )}

@@ -25,15 +25,23 @@ export function EditClientModal({
   client,
   tiers,
   people,
+  parentClientOptions,
+  hasChildren,
   onClose,
 }: {
   client: ClientCardData;
   tiers: TierInfo[];
   people: PersonOption[];
+  // Top-level clients this one could sit under as a sub-client / tactical.
+  parentClientOptions: { id: number; name: string }[];
+  // A client that already has sub-clients stays top-level (no nesting
+  // two deep — that's not a shape the board renders).
+  hasChildren: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
-  const isTactical = client.parentId != null;
+  const [parentId, setParentId] = useState<number | null>(client.parentId);
+  const isTactical = parentId != null;
   const [name, setName] = useState(client.name);
   const [tierId, setTierId] = useState<number | null>(client.tier?.id ?? null);
   const [cadence, setCadence] = useState(client.cadence);
@@ -81,6 +89,7 @@ export function EditClientModal({
     startTransition(async () => {
       const result = await saveDigitalClient(client.id, {
         name,
+        parentId,
         tierId,
         cadence,
         status,
@@ -109,6 +118,29 @@ export function EditClientModal({
         <div>
           <label className={labelClass}>{isTactical ? "Tactical name" : "Client name"}</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+
+        <div>
+          <label className={labelClass}>Sub-client of</label>
+          <Select
+            value={parentId ?? ""}
+            disabled={hasChildren}
+            onChange={(e) => setParentId(e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">None — top-level client</option>
+            {parentClientOptions
+              .filter((c) => c.id !== client.id)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+          </Select>
+          <p className="mt-1 text-[11px] text-charcoal">
+            {hasChildren
+              ? "This client has its own sub-clients, so it stays top-level."
+              : "Sub-clients and tacticals sit nested under their parent on the board."}
+          </p>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
