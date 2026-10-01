@@ -23,7 +23,7 @@ function ChannelPicker({ name }: { name: string }) {
   );
 }
 
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-6">
       <div

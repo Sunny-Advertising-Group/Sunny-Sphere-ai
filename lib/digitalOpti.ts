@@ -56,6 +56,11 @@ export const CLIENT_STATUS_META: Record<string, { label: string; className: stri
   archived: { label: "Archived", className: "text-charcoal bg-black/5" },
 };
 
+export const CLIENT_STATUS_OPTIONS = Object.entries(CLIENT_STATUS_META).map(([value, meta]) => ({
+  value,
+  label: meta.label,
+}));
+
 export function clientStatusMeta(status: string) {
   return CLIENT_STATUS_META[status] ?? { label: status, className: "text-charcoal bg-black/5" };
 }
@@ -85,6 +90,30 @@ export function periodStart(cadence: string, at: Date = new Date()): Date {
   const spanMs = cadence === "fortnightly" ? WEEK_MS * 2 : WEEK_MS;
   const periodIndex = Math.floor((at.getTime() - EPOCH_MONDAY_UTC) / spanMs);
   return new Date(EPOCH_MONDAY_UTC + periodIndex * spanMs);
+}
+
+// The team works on Brisbane time, so "today" for end-date purposes is the
+// Brisbane calendar date (no DST, always UTC+10) rather than the UTC one.
+export function brisbaneTodayIso(at: Date = new Date()): string {
+  return new Date(at.getTime() + 10 * 3_600_000).toISOString().slice(0, 10);
+}
+
+// What the Schedule tile shows, derived from this week's rotation row:
+// every gated tier (Black/Yellow/Blue) that's on this week, plus every
+// ungated tier (e.g. Red) since those are always due — e.g. "Black & Red".
+// With no rotation row for the week nothing is filtered, so every tier is due.
+export function scheduleLabelFor(
+  tiers: TierInfo[],
+  scheduledTierIds: number[],
+  activeTierIds: number[] | null,
+): string | null {
+  const due = tiers
+    .filter((t) => isDueThisWeek(t.id, scheduledTierIds, activeTierIds))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((t) => t.name);
+  if (due.length === 0) return null;
+  if (due.length === 1) return due[0];
+  return `${due.slice(0, -1).join(", ")} & ${due[due.length - 1]}`;
 }
 
 // The Monday of the current real-world week — shown as "Week commencing" on
@@ -173,6 +202,10 @@ export type ClientInput = {
   // retainer (this row's own `retainer` is not additional spend); false =
   // this row's retainer is extra, on top of the parent's.
   includedInParentRetainer: boolean;
+  // Last day this client/tactical runs (YYYY-MM-DD) — a tactical's end or an
+  // offboarding date. The day after, the expire-digital-clients cron
+  // archives it. Null = ongoing.
+  endDate: string | null;
 };
 
 export type ClientChannelCard = {

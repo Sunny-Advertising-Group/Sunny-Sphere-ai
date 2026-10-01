@@ -1,12 +1,15 @@
 import { redirect } from "next/navigation";
 import { getVisibility } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { PageHeader } from "@/components/ui";
 import {
+  brisbaneTodayIso,
   buildDigitalOptiBoardData,
   currentInstant,
   currentWeekCommencing,
   lookbackIsoDate,
+  scheduleLabelFor,
   SCHEDULED_TIER_NAMES,
 } from "@/lib/digitalOpti";
 import { DigitalOptiBoard } from "./DigitalOptiBoard";
@@ -23,25 +26,29 @@ export default async function DigitalOptiPage() {
   const now = currentInstant();
   const lookbackIso = lookbackIsoDate(LOG_LOOKBACK_DAYS, now);
   const weekCommencingIso = currentWeekCommencing(now).toISOString().slice(0, 10);
+  const todayIso = brisbaneTodayIso(now);
 
   const [
     { data: clients, error: clientsError },
     { data: channels, error: channelsError },
     { data: logs, error: logsError },
-    { data: settings },
     { data: tiers },
     { data: scheduleRow },
     { data: clientOwners },
     { data: myPending },
+    { data: people },
   ] = await Promise.all([
     supabase
       .from("clients")
       .select(
-        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, parent_client_id, included_in_parent_retainer, tier:client_tiers(id, name, colour, sort_order)",
+        "id, name, colour, retainer, wip_doc_url, digital_status, digital_cadence, parent_client_id, included_in_parent_retainer, end_date, tier:client_tiers(id, name, colour, sort_order)",
       )
       .eq("on_digital", true)
       .eq("approval_status", "approved")
       .neq("digital_status", "archived")
+      // Past its end date = archived, even before the nightly
+      // expire-digital-clients cron has flipped its status.
+      .or(`end_date.is.null,end_date.gte.${todayIso}`)
       .order("name"),
     supabase
       .from("digital_client_channels")
@@ -51,7 +58,6 @@ export default async function DigitalOptiPage() {
       .from("digital_opti_logs")
       .select("id, client_channel_id, completed_at, voided_at")
       .gte("completed_at", lookbackIso),
-    supabase.from("digital_opti_settings").select("schedule_label").eq("id", 1).single(),
     supabase.from("client_tiers").select("id, name, colour, sort_order").order("sort_order"),
     supabase.from("digital_opti_schedule").select("tier_ids").eq("week_commencing", weekCommencingIso).maybeSingle(),
     supabase.from("digital_client_owners").select("client_id, profile_id, split_pct, profile:profiles(full_name, email)"),
@@ -61,6 +67,9 @@ export default async function DigitalOptiPage() {
       .eq("submitted_by", visibility.profile.id)
       .in("approval_status", ["pending", "rejected"])
       .order("id", { ascending: false }),
+    // Pickers in the Edit client popup. Non-admins can't list profiles under
+    // RLS, so this goes through the service-role client — names only.
+    createAdminClient().from("profiles").select("id, full_name, email").order("full_name"),
   ]);
 
   if (clientsError) console.error("[digital-opti] clients query failed:", clientsError);
@@ -90,6 +99,7 @@ export default async function DigitalOptiPage() {
       owners: ownersByClient.get(client.id) ?? [],
       parentId: client.parent_client_id,
       includedInParentRetainer: client.included_in_parent_retainer,
+      endDate: client.end_date,
     };
   });
 
@@ -108,6 +118,8 @@ export default async function DigitalOptiPage() {
   const activeTierIds = (scheduleRow?.tier_ids as number[] | undefined) ?? null;
 
   const board = buildDigitalOptiBoardData(clientInputs, channelInputs, logs ?? [], now, scheduledTierIds, activeTierIds);
+  const scheduleLabel = scheduleLabelFor(tierOptions, scheduledTierIds, activeTierIds);
+  const peopleOptions = (people ?? []).map((p) => ({ id: p.id, label: p.full_name || p.email }));
 
   // Only an existing top-level client can take on a tactical — nesting a
   // tactical under another tactical isn't a shape the board renders.
@@ -129,12 +141,13 @@ export default async function DigitalOptiPage() {
         totalActive={board.totalActive}
         lastUpdatedAt={board.lastUpdatedAt}
         teamSplit={board.teamSplit}
-        scheduleLabel={settings?.schedule_label ?? null}
+        scheduleLabel={scheduleLabel}
         isAdmin={visibility.isAdmin}
         tiers={tierOptions}
         myProfileId={visibility.profile.id}
         parentClientOptions={parentClientOptions}
         myPending={myPending ?? []}
+        people={peopleOptions}
       />
     </div>
   );
